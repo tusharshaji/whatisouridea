@@ -1,0 +1,123 @@
+--!strict
+
+-- Ring course tuning.
+--
+-- A course is a walk across the map that drops a gate every few hundred studs.
+-- Where that walk goes is decided from a height grid sampled once at startup
+-- (see TerrainSurvey), not from raycasts around whatever position it happens to
+-- be standing on -- which is why an earlier version simply circled the flat
+-- ground near the runway. It could not see the mountains, so it never went to
+-- them.
+--
+-- Two hard limits come out of PlaneConfig rather than out of taste, and the
+-- generator derives them at runtime instead of trusting numbers typed here:
+--
+--   Turn radius   MaxSpeed / MaxTurnRate = 220 / 55deg = about 229 studs. Two
+--                 gates cannot demand a heading change the aircraft physically
+--                 cannot fly in the distance between them.
+--   Climb angle   atan(MaxClimbRate / MaxSpeed) = about 17.6 degrees. A gate
+--                 cannot sit higher above the last one than that slope reaches
+--                 across the gap.
+--
+-- Change the aircraft and the course follows it, because both come from the
+-- same two numbers.
+
+return {
+	--------------------------------------------------------------------------
+	-- Course shape
+	--------------------------------------------------------------------------
+	Seed = 20260813, -- base seed. Each player's course is this plus their own
+	-- offset, so two pilots on one server fly different lines.
+	RingCount = 30,
+	FirstGateDistance = 800, -- runway to gate one, long enough to get airborne
+
+	FallbackExtent = 4096, -- only used if no terrain has been generated
+	EdgeMargin = 400,
+
+	--------------------------------------------------------------------------
+	-- The survey grid
+	--------------------------------------------------------------------------
+	SurveyCell = 96, -- studs per sample. Smaller sees narrower passes and costs
+	-- more rays: a 4096 map is about 1,800 samples at 96.
+	RuggedRadius = 260, -- neighbourhood used when judging how broken up ground is
+	WallRadius = 300, -- neighbourhood used when judging what stands above a gate
+
+	--------------------------------------------------------------------------
+	-- Steering. The walk aims at a rugged patch of map and re-aims when it
+	-- arrives, which is what keeps it out among the terrain.
+	--------------------------------------------------------------------------
+	TargetMinDistance = 1400,
+	TargetMaxDistance = 4200,
+	RetargetWithin = 900, -- pick a new target once this close to the old one
+	TargetPull = 0.55, -- how strongly a candidate is judged on heading toward
+	-- the target versus on the terrain immediately around it
+
+	--------------------------------------------------------------------------
+	-- Spacing and turning. Both tighten as the course goes on.
+	--------------------------------------------------------------------------
+	StartSpacing = 900,
+	EndSpacing = 500,
+	StartTurn = math.rad(35),
+	EndTurn = math.rad(75),
+	TurnSafety = 0.8, -- fraction of the geometrically possible turn to use
+
+	Candidates = 20, -- bearings tried per gate. These are grid lookups now
+	-- rather than raycasts, so this can be generous.
+
+	--------------------------------------------------------------------------
+	-- Height. Measured from the ring's lowest point to the ground under it, so
+	-- a gate is never generated buried in a hillside whatever its radius. Kept
+	-- low deliberately: the aircraft is meant to be down among the rock.
+	--------------------------------------------------------------------------
+	StartMinClearance = 45,
+	StartMaxClearance = 130,
+	EndMinClearance = 15,
+	EndMaxClearance = 65,
+	ClimbSafety = 0.7,
+	WaterLevel = 0,
+	CeilingMargin = 150,
+
+	-- A gate is only worth having if terrain stands above it. This is the
+	-- fraction of the surrounding neighbourhood that has to be higher than the
+	-- gate before it counts as threading the landscape rather than floating over
+	-- it. Candidates are ranked on raw wall score, and any that clear this bar
+	-- get a large bonus on top, so a genuinely enclosed line always beats a
+	-- marginally better-aimed one out in the open.
+	WallTarget = 0.35,
+	WallBonus = 0.5,
+
+	-- How far ahead and behind a gate has to be clear for the aircraft to get
+	-- through it. Without this the search happily buries a gate in the most
+	-- enclosed thing on the map, which is the inside of a mountain.
+	CorridorReach = 220,
+
+	--------------------------------------------------------------------------
+	-- Gate size. Wingspan is 30 studs, so EndRadius leaves a little under a
+	-- wingspan of room on each side.
+	--------------------------------------------------------------------------
+	StartRadius = 100,
+	EndRadius = 38,
+
+	--------------------------------------------------------------------------
+	-- Appearance. Gates are built by each client for its own course only, so
+	-- these are read on the client.
+	--------------------------------------------------------------------------
+	Segments = 18,
+	Thickness = 3.4,
+	ActiveColor = Color3.fromRGB(255, 132, 48),
+	UpcomingColor = Color3.fromRGB(70, 110, 180),
+	PassedColor = Color3.fromRGB(110, 225, 130),
+	UpcomingTransparency = 0.5,
+	PassedTransparency = 0.8,
+	VisibleAhead = 3,
+
+	--------------------------------------------------------------------------
+	-- Scoring
+	--------------------------------------------------------------------------
+	BasePoints = 100,
+	CenterBonus = 150,
+	ComboStep = 0.25,
+	MaxComboMultiplier = 5,
+	MissRadiusFactor = 3.5,
+	LapBonus = 1500, -- for finishing a whole course
+}
