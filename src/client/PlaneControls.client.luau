@@ -1,7 +1,11 @@
 --!strict
 
--- Pilot input and instruments. Input is sampled every frame and sent at a fixed
--- rate; the server owns the flight model and only ever receives axis values.
+-- Pilot input and instruments.
+--
+-- Input is sampled every frame and sent at a fixed rate; the server owns the
+-- flight model and only ever receives axis values. Readouts come back as
+-- attributes on the local player, which is how each pilot sees their own
+-- aircraft rather than whichever one happened to be in the world first.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -14,19 +18,14 @@ local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Pl
 local SEND_RATE = 1 / 20
 
 local player = Players.LocalPlayer
-local inputRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("PlaneInput") :: RemoteEvent
+local remotes = ReplicatedStorage:WaitForChild("Remotes")
+local inputRemote = remotes:WaitForChild("PlaneInput") :: RemoteEvent
 
-local plane = Workspace:WaitForChild("Airplane")
-local seat = plane:WaitForChild("PilotSeat") :: VehicleSeat
-local state = plane:WaitForChild("State")
-
-local throttleValue = state:WaitForChild("Throttle") :: NumberValue
-local airspeedValue = state:WaitForChild("Airspeed") :: NumberValue
-local altitudeValue = state:WaitForChild("Altitude") :: NumberValue
-local climbValue = state:WaitForChild("ClimbRate") :: NumberValue
-local bankValue = state:WaitForChild("Bank") :: NumberValue
-local headingValue = state:WaitForChild("Heading") :: NumberValue
-local groundedValue = state:WaitForChild("Grounded") :: BoolValue
+local ACCENT = Color3.fromRGB(255, 132, 48)
+local WHITE = Color3.fromRGB(235, 235, 240)
+local GREEN = Color3.fromRGB(120, 230, 140)
+local RED = Color3.fromRGB(240, 96, 96)
+local WARN = Color3.fromRGB(255, 200, 90)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PlaneHud"
@@ -34,8 +33,8 @@ screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 240, 0, 210)
-panel.Position = UDim2.new(0, 20, 1, -230)
+panel.Size = UDim2.new(0, 240, 0, 231)
+panel.Position = UDim2.new(0, 20, 1, -251)
 panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 panel.BackgroundTransparency = 0.35
 panel.BorderSizePixel = 0
@@ -71,25 +70,22 @@ local function addRow(order: number, size: number, color: Color3): TextLabel
 	return label
 end
 
-local ACCENT = Color3.fromRGB(255, 132, 48)
-local WHITE = Color3.fromRGB(235, 235, 240)
-local GREEN = Color3.fromRGB(120, 230, 140)
-
 local title = addRow(1, 16, ACCENT)
 title.Text = "FLIGHT"
 
 local throttleRow = addRow(2, 15, WHITE)
 local speedRow = addRow(3, 15, WHITE)
 local altitudeRow = addRow(4, 15, WHITE)
-local climbRow = addRow(5, 15, WHITE)
-local bankRow = addRow(6, 15, WHITE)
-local headingRow = addRow(7, 15, WHITE)
-local statusRow = addRow(8, 15, GREEN)
+local aglRow = addRow(5, 15, WHITE)
+local climbRow = addRow(6, 15, WHITE)
+local bankRow = addRow(7, 15, WHITE)
+local headingRow = addRow(8, 15, WHITE)
+local statusRow = addRow(9, 15, GREEN)
 
-local hint = addRow(9, 12, Color3.fromRGB(160, 160, 170))
+local hint = addRow(10, 12, Color3.fromRGB(160, 160, 170))
 hint.Size = UDim2.new(1, 0, 0, 42)
 hint.TextWrapped = true
-hint.Text = "W/S throttle  -  arrows climb/dive\nA/D turn  -  Q/E rudder  -  R reset"
+hint.Text = "W/S throttle  -  arrows climb/dive\nA/D turn  -  Q/E rudder  -  R restart  -  B shop"
 
 local KEY_THROTTLE_UP = Enum.KeyCode.W
 local KEY_THROTTLE_DOWN = Enum.KeyCode.S
@@ -111,9 +107,13 @@ local function axis(negative: Enum.KeyCode, positive: Enum.KeyCode): number
 	return value
 end
 
-local function isFlying(): boolean
-	local occupant = seat.Occupant
-	return occupant ~= nil and occupant.Parent == player.Character
+-- This pilot's own aircraft, which the server names after their user id.
+local function ownPlane(): Model?
+	local folder = Workspace:FindFirstChild("Planes")
+	if not folder then
+		return nil
+	end
+	return folder:FindFirstChild(`Plane_{player.UserId}`) :: Model?
 end
 
 local function bar(fraction: number): string
@@ -121,8 +121,16 @@ local function bar(fraction: number): string
 	return string.rep("#", filled) .. string.rep(".", 10 - filled)
 end
 
+local function number(name: string): number
+	local value = player:GetAttribute(name)
+	return if type(value) == "number" then value else 0
+end
+
 UserInputService.InputBegan:Connect(function(input, processed)
-	if not processed and input.KeyCode == Enum.KeyCode.R and isFlying() then
+	if processed then
+		return
+	end
+	if input.KeyCode == Enum.KeyCode.R then
 		inputRemote:FireServer({ reset = true })
 	end
 end)
@@ -130,24 +138,39 @@ end)
 local sinceSend = 0
 
 RunService.Heartbeat:Connect(function(dt)
-	local flying = isFlying()
-	panel.Visible = flying
-	if not flying then
+	local plane = ownPlane()
+	panel.Visible = plane ~= nil
+	if not plane then
 		return
 	end
 
-	throttleRow.Text = string.format("THR  %s %3d%%", bar(throttleValue.Value), throttleValue.Value * 100)
-	speedRow.Text = string.format("SPD  %6.0f studs/s", airspeedValue.Value)
-	altitudeRow.Text = string.format("ALT  %6.0f studs", altitudeValue.Value)
-	climbRow.Text = string.format("VS   %+6.0f studs/s", climbValue.Value)
-	bankRow.Text = string.format("BNK  %+6.0f deg", bankValue.Value)
-	headingRow.Text = string.format("HDG  %6.0f deg", headingValue.Value)
+	local agl = number("HeightAboveGround")
 
-	if not groundedValue.Value then
-		statusRow.Text = ""
-	elseif airspeedValue.Value >= Config.TakeoffSpeed then
+	throttleRow.Text = string.format("THR  %s %3d%%", bar(number("Throttle")), number("Throttle") * 100)
+	speedRow.Text = string.format("SPD  %6.0f studs/s", number("Airspeed"))
+	altitudeRow.Text = string.format("ALT  %6.0f studs", number("Altitude"))
+	-- Over terrain this is the number that keeps you alive; ALT alone says
+	-- nothing about the mountain immediately below.
+	aglRow.Text = string.format("AGL  %6.0f studs", agl)
+	climbRow.Text = string.format("VS   %+6.0f studs/s", number("ClimbRate"))
+	bankRow.Text = string.format("BNK  %+6.0f deg", number("Bank"))
+	headingRow.Text = string.format("HDG  %6.0f deg", number("Heading"))
+
+	if player:GetAttribute("Crashed") then
+		statusRow.TextColor3 = RED
+		statusRow.Text = "CRASHED - RUN LOST"
+	elseif not player:GetAttribute("Grounded") then
+		if agl < 60 then
+			statusRow.TextColor3 = WARN
+			statusRow.Text = "LOW - PULL UP"
+		else
+			statusRow.Text = ""
+		end
+	elseif number("Airspeed") >= Config.TakeoffSpeed then
+		statusRow.TextColor3 = GREEN
 		statusRow.Text = "READY - PULL UP"
 	else
+		statusRow.TextColor3 = GREEN
 		statusRow.Text = "ON RUNWAY - HOLD W"
 	end
 

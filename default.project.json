@@ -11,6 +11,15 @@
         "$className": "Folder",
         "PlaneInput": {
           "$className": "RemoteEvent"
+        },
+        "CourseData": {
+          "$className": "RemoteEvent"
+        },
+        "GameEvent": {
+          "$className": "RemoteEvent"
+        },
+        "BuyUpgrade": {
+          "$className": "RemoteEvent"
         }
       }
     },
@@ -32,28 +41,6 @@
     "Workspace": {
       "$properties": {
         "FilteringEnabled": true
-      },
-      "Baseplate": {
-        "$className": "Part",
-        "$properties": {
-          "Anchored": true,
-          "Color": [
-            0.38823,
-            0.37254,
-            0.38823
-          ],
-          "Locked": true,
-          "Position": [
-            0,
-            -10,
-            0
-          ],
-          "Size": [
-            512,
-            20,
-            512
-          ]
-        }
       },
       "Runway": {
         "$className": "Model",
@@ -470,17 +457,6 @@
             "Color": [0.1, 0.1, 0.1],
             "Anchored": false
           }
-        },
-
-        "State": {
-          "$className": "Folder",
-          "Throttle": { "$className": "NumberValue" },
-          "Airspeed": { "$className": "NumberValue" },
-          "Altitude": { "$className": "NumberValue" },
-          "ClimbRate": { "$className": "NumberValue" },
-          "Bank": { "$className": "NumberValue" },
-          "Heading": { "$className": "NumberValue" },
-          "Grounded": { "$className": "BoolValue" }
         }
       }
     },

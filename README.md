@@ -1,8 +1,8 @@
 # whatisouridea
 
-A Roblox flying game built with [Rojo](https://rojo.space/). An arcade-style
-aircraft with a stable, forgiving flight model, a runway to take off from, and
-moving control surfaces.
+A Roblox flying game built with [Rojo](https://rojo.space/). Every pilot gets
+their own aircraft and their own ring course threaded through a generated
+mountain map, and spends what they earn on faster aeroplanes.
 
 ## Getting started
 
@@ -22,13 +22,35 @@ rojo serve
 
 and hit **Connect** in the Rojo Studio plugin.
 
+> **Build the place file once, then never again.** Terrain lives in the place,
+> not in `default.project.json`, so re-running `rojo build` overwrites the saved
+> place and the generated terrain is gone. After the first build, only ever
+> `rojo serve` into the existing place and save from Studio.
+
 > Editing a `.luau` file hot-reloads. Editing `default.project.json` does not --
 > restart `rojo serve` and reconnect the plugin, or the change will never reach
 > Studio.
 
+## The map
+
+Terrain is generated in Studio, not by this repo. The settings the flight model
+is tuned around:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Map size | 4096 x 1024 x 4096 | 4096 is ~19 sec to cross at full throttle |
+| Biome size | 300 | Default 100 gives features you cross in half a second |
+| Biomes | Mountains, Canyons, Hills, Plains, Water | Canyons give walls to thread |
+| Caves | off | Generation time you never see from a cockpit |
+
+Delete the Baseplate before generating, and put the runway somewhere flat
+afterwards. The map size is read from `Workspace.Terrain.MaxExtents` at runtime,
+so a different size needs no code change -- the server prints the bounds it found
+at startup, which is the first thing to check if courses appear somewhere odd.
+
 ## Flying
 
-Sit in the pilot seat and a flight panel appears.
+You are seated in your own aircraft automatically when you join.
 
 | Key | Action |
 | --- | --- |
@@ -36,48 +58,125 @@ Sit in the pilot seat and a flight panel appears.
 | `Up` / `Down` | Climb / descend |
 | `A` / `D` | Bank and turn |
 | `Q` / `E` | Rudder |
-| `R` | Reset to the runway |
+| `R` | Restart the run |
+| `B` | Hangar |
 
-Hold `W`; once the panel reads `READY - PULL UP`, pull back.
+Hold `W`; once the panel reads `READY - PULL UP`, pull back. Watch `AGL` rather
+than `ALT` -- `ALT` is height above sea level and says nothing about the mountain
+immediately below you.
 
-## How the flight model works
+## The course
 
-It is deliberately **not** an aerodynamic simulation. An earlier version was --
-lift coefficients, angle of attack, air density, propeller thrust curves -- and
-it was unpredictable to fly and shed altitude badly in turns.
+Fly through the lit gate. An arrow at the edge of the screen points at it when it
+is off to the side or behind you.
 
-The controller instead keeps five numbers (throttle, speed, heading, bank, climb
-rate), eases each toward what the pilot is asking for, and commands the result
-through a `LinearVelocity` and an `AlignOrientation`. The aircraft has no
-momentum of its own to fight, so it cannot spin, oscillate, sideslip or fall out
-of a bank.
+Gates are worth more the smaller they are, more again for a centred pass, and
+every consecutive gate raises a combo multiplier up to 5x. **Crashing costs the
+whole run**: the airframe comes apart and you restart from the runway at gate
+one. `R` does the same thing deliberately -- as a free reset it would just be an
+escape hatch from every crash about to happen.
 
-Turning and climbing are independent: heading comes from bank angle, height from
-climb rate, and neither reads the other, so banking never costs altitude. Every
-limit is a clamp, and every easing goes through one `approach()` helper that
-steps toward a target without overshooting -- which is why nothing oscillates.
+Two currencies, because a crash should cost a run and not an evening:
+
+| | Wiped by a crash | What it is for |
+| --- | --- | --- |
+| **Score** | yes | The run you are flying, and your best |
+| **Points** | no | Banked. Spent in the hangar. |
+
+## The hangar
+
+`B` opens it. Four aircraft and three upgrade tracks, all defined in
+`UpgradeConfig.luau` -- the same table the server validates purchases against, so
+what is on the button is what gets charged. Upgrades multiply `PlaneConfig`
+values per pilot:
+
+- **Engine** -> top speed
+- **Wings** -> turn rate and roll rate
+- **Lift** -> climb and dive rate
+
+Nothing bought touches the crash rules or gate sizes, so a fully upgraded Delta
+is faster and sharper but still has to be flown through the same rock.
+
+> Purchases last for the session only. There is no DataStore yet, so a server
+> restart resets everyone's bank.
+
+## How courses are generated
+
+A course is a walk across the map that drops a gate every few hundred studs, and
+it is generated per pilot from a per-pilot seed. Nobody flies the same line.
+
+The walk is steered by a **height grid sampled once at startup**
+(`TerrainSurvey`). This matters: an earlier version asked the terrain questions
+with raycasts around whatever position it had already picked, which meant it
+could only see a few hundred studs and had no idea the mountains existed. It
+circled the flat ground near the runway forever. With a grid, every question --
+how high is it there, how broken up is that ground, am I below the ridge line --
+is a free table lookup, so the generator can look at the whole map, pick a rugged
+patch a couple of thousand studs away, and aim at it.
+
+Each gate is chosen from twenty candidate bearings, scored on:
+
+- **Wall score** -- what fraction of the surrounding neighbourhood stands *above*
+  the gate. This is the measure that means "flying below the ridge line".
+- **Aim** -- how well the bearing heads toward the current rugged target.
+- A hard filter that the line straight through is actually flyable.
+
+Two limits come from the aircraft rather than from taste:
+
+- **Turn radius** `MaxSpeed / MaxTurnRate` = about 229 studs, so no two gates
+  demand a corner tighter than the plane can fly.
+- **Climb slope** `MaxClimbRate / MaxSpeed` = about 17.6 degrees, so no gate sits
+  higher above the last one than that slope reaches across the gap.
+
+Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 
 ## Layout
 
 | Path | Contents |
 | --- | --- |
 | `default.project.json` | The world and the aircraft, as real instances |
-| `src/server/Airplane.server.luau` | Flight controller (server authoritative) |
-| `src/client/PlaneControls.client.luau` | Keyboard input and the HUD |
-| `src/shared/PlaneConfig.luau` | Every handling value, commented for tuning |
+| `src/server/Main.server.luau` | Pilots, courses, scoring, purchases |
+| `src/server/PlaneController.luau` | One aircraft, belonging to one pilot |
+| `src/server/TerrainSurvey.luau` | The height grid the course is planned on |
+| `src/server/CourseBuilder.luau` | Gate placement |
+| `src/client/PlaneControls.client.luau` | Input and the flight panel |
+| `src/client/RingHud.client.luau` | Score, gate marker, and drawing your rings |
+| `src/client/ShopUi.client.luau` | The hangar |
+| `src/shared/PlaneConfig.luau` | Every handling value |
+| `src/shared/RingConfig.luau` | Every course and scoring value |
+| `src/shared/UpgradeConfig.luau` | Aircraft, upgrades, prices |
+| `src/shared/Ensure.luau` | Get-or-create, instead of waiting forever |
 
-Tuning lives entirely in `PlaneConfig.luau` -- speed, turn rates, climb limits,
-bank limits, control-surface travel -- with angles written as `math.rad()` so
-they read in degrees.
+### Things that are easy to break
 
-### A note on editing the aircraft
+**Never `WaitForChild` a state value or a remote from a server script.** Use
+`Ensure.luau`, which creates it if missing. Those instances are declared in
+`default.project.json`, and that file reaches Studio only when `rojo serve` is
+restarted -- so adding one and forgetting the restart makes every script that
+waits on it hang at startup, forever, with no error. The aircraft stops
+responding, no course is generated, and the place looks like it is loading. Real
+geometry still uses `WaitForChild`, because a missing wing should not be quietly
+replaced with an empty Part.
 
-Colours, materials, part sizes and extra decoration are all free: the controller
-no longer reads the geometry, so shape and mass do not affect handling. Resting
-height is measured from the model at startup, so the plane can be moved or given
-taller gear and it still sits on its wheels.
+**Height is measured against the ground below, not against world Y.** An earlier
+version compared altitude to a fixed number taken off the runway, which was fine
+on a flat baseplate and wrong the moment terrain existed: flying low over ground
+near sea level made the plane decide it was parked, which locked the wings level
+and refused all descent. Anything asking "is it airborne" must raycast.
 
-Part *names* do matter. `Fuselage`, `RotorHub`, `PilotSeat`, `State`, the four
-attachments and the three constraints are all found by `WaitForChild`, so a
-rename does not error -- the script simply hangs at startup and the plane never
-responds.
+**Gate parts must keep `CanQuery = false`.** A queryable gate registers as solid
+rock in the crash sweep and as ground in the altitude probe.
+
+**Rings are drawn by the client, for its own course only.** They were server
+instances once, which meant everyone could see everyone's rings and one pilot
+flying through one scored it for the whole room. The server still owns detection;
+the client only draws.
+
+**Respawning clones a new aeroplane rather than reassembling the wreck.** The
+version that broke the welds, flung the parts and put the same parts back lost
+pieces -- debris that fell past `FallenPartsDestroyHeight`, or through thin
+terrain, was gone before reassembly ran and could not be recreated. A fresh clone
+cannot be missing anything.
+
+**Aircraft share a non-self-colliding collision group.** Without it one pilot can
+swat another off the course.

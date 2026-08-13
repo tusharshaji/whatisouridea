@@ -48,14 +48,48 @@ return {
 
 	--------------------------------------------------------------------------
 	-- Altitude
+	--
+	-- Everything here is measured against the ground directly beneath the
+	-- aircraft, found by a raycast each frame, rather than against world Y.
+	-- Over terrain the two are not the same: a valley floor can sit hundreds of
+	-- studs below zero and a plateau hundreds above, so an absolute height test
+	-- would call the plane "landed" in mid-air over low ground and "flying"
+	-- while buried in a hillside.
 	--------------------------------------------------------------------------
-	RunwayHeight = 0.1, -- Y of the tarmac surface
 	-- The height the plane parks at is measured from the model's own extents at
 	-- startup rather than written down here, so moving the aircraft, raising it,
 	-- or changing the landing gear all keep the wheels on the ground by itself.
 	GroundTolerance = 1.5, -- how far above resting height still counts as landed
-	MaxAltitude = 2500, -- ceiling, to keep the plane in view of the world
-	ResetHeight = -40, -- fall below this and the plane returns to the runway
+	GroundProbeDepth = 4000, -- how far down to look for ground; must exceed the
+	-- deepest point of the map, or the plane will think it is over the void
+	MaxAltitude = 2500, -- ceiling, measured in absolute world Y
+	VoidHeight = -1000, -- genuinely fallen out of the world; well below the floor
+	-- of a generated map, so valleys and sea bed never trigger it
+
+	--------------------------------------------------------------------------
+	-- Crashing
+	--
+	-- The controller commands velocity directly, so without this the aircraft
+	-- would simply grind into a mountain and keep pushing. A short probe along
+	-- the flight path turns that into a crash instead.
+	--------------------------------------------------------------------------
+	CrashEnabled = true, -- set false to fly through terrain while building courses
+	CrashProbeDistance = 16, -- studs ahead of the nose to watch for terrain
+	CrashRespawnDelay = 2.6, -- seconds of wreckage before the runway is restored
+	CrashGracePeriod = 2, -- seconds after a respawn during which impacts are
+	-- ignored. Without it, terrain close to the end of the runway puts the
+	-- aircraft into a crash loop it can never take off out of.
+	CrashImpactDot = -0.35, -- how head-on an impact must be to count as a crash.
+	-- Compared against travel direction dotted with the surface normal, so a
+	-- shallow touchdown on flat ground is a landing and a dive into the same
+	-- ground, or level flight into a cliff face, is a crash.
+
+	-- An impact unwelds the airframe and throws the pieces outward from the
+	-- middle of the wreck. The seat keeps its weld so the pilot rides the main
+	-- section down instead of being flung off on their own.
+	CrashScatterSpeed = 42, -- outward studs/sec given to each loose part
+	CrashScatterLift = 26, -- upward studs/sec on top of that, so it bursts
+	CrashScatterSpin = 9, -- rad/sec of random tumble per part
 
 	--------------------------------------------------------------------------
 	-- Response
