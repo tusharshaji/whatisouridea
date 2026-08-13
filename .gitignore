@@ -1,0 +1,12 @@
+# Project place file. Rebuilt by "rojo build" and safe to delete.
+/whatisouridea.rbxlx
+
+# The place you actually work in. Terrain lives here and nowhere else, because
+# Rojo does not sync it -- never let a build write over this one.
+/whatisouridea-place.rbxl
+
+# Roblox Studio lock files
+/*.rbxlx.lock
+/*.rbxl.lock
+
+sourcemap.json
