@@ -319,25 +319,27 @@ local function settingsRow(order: number, text: string, color: Color3, size: num
 end
 
 settingsRow(1, "CONTROLS", ACCENT, 16)
-settingsRow(2, "W / S        throttle", WHITE, 14)
-settingsRow(3, "UP / DOWN    pitch, no limit", WHITE, 14)
-settingsRow(4, "A / D        roll, no limit", WHITE, 14)
-settingsRow(5, "Q / E        rudder", WHITE, 14)
-settingsRow(6, "R            restart run", WHITE, 14)
-settingsRow(7, "B            hangar (at runway)", WHITE, 14)
-settingsRow(8, "", DIM, 6)
-settingsRow(9, "CAMERA", ACCENT, 16)
-settingsRow(10, "RIGHT DRAG   look around", WHITE, 14)
-settingsRow(11, "SCROLL       zoom in / out", WHITE, 14)
-settingsRow(12, "             recentres on its own", DIM, 12)
-settingsRow(13, "", DIM, 6)
-settingsRow(14, "Hold UP through the vertical and", DIM, 12)
-settingsRow(15, "the aircraft will loop. Wings level", DIM, 12)
-settingsRow(16, "themselves only while upright, so", DIM, 12)
-settingsRow(17, "inverted flight holds.", DIM, 12)
-settingsRow(18, "", DIM, 6)
-settingsRow(19, "Watch AGL, not ALT. Fuel burns", DIM, 12)
-settingsRow(20, "with throttle; empty means glide.", DIM, 12)
+settingsRow(2, "UP / DOWN    throttle", WHITE, 14)
+settingsRow(3, "S            pull back, nose up", WHITE, 14)
+settingsRow(4, "W            push forward, nose down", WHITE, 14)
+settingsRow(5, "A / D        roll, no limit", WHITE, 14)
+settingsRow(6, "Q / E        rudder", WHITE, 14)
+settingsRow(7, "R            restart run", WHITE, 14)
+settingsRow(8, "B            hangar (at runway)", WHITE, 14)
+settingsRow(9, "", DIM, 6)
+settingsRow(10, "CAMERA", ACCENT, 16)
+settingsRow(11, "RIGHT DRAG   look around", WHITE, 14)
+settingsRow(12, "SCROLL       zoom in / out", WHITE, 14)
+settingsRow(13, "             recentres on its own", DIM, 12)
+settingsRow(14, "", DIM, 6)
+settingsRow(15, "The stick is inverted, like a real", DIM, 12)
+settingsRow(16, "one. Hold S through the vertical", DIM, 12)
+settingsRow(17, "and the aircraft loops. Wings level", DIM, 12)
+settingsRow(18, "themselves only while upright, so", DIM, 12)
+settingsRow(19, "inverted flight holds.", DIM, 12)
+settingsRow(20, "", DIM, 6)
+settingsRow(21, "Watch AGL, not ALT. Fuel burns", DIM, 12)
+settingsRow(22, "with throttle; empty means glide.", DIM, 12)
 
 settingsButton.Activated:Connect(function()
 	local opening = not settingsPanel.Visible
@@ -357,10 +359,12 @@ end)
 -- Input
 --------------------------------------------------------------------------------
 
-local KEY_THROTTLE_UP = Enum.KeyCode.W
-local KEY_THROTTLE_DOWN = Enum.KeyCode.S
-local KEY_PITCH_UP = Enum.KeyCode.Up
-local KEY_PITCH_DOWN = Enum.KeyCode.Down
+-- Arrows are the throttle. W and S are the stick, inverted the way a real one
+-- is: push forward for the nose down, pull back for the nose up.
+local KEY_THROTTLE_UP = Enum.KeyCode.Up
+local KEY_THROTTLE_DOWN = Enum.KeyCode.Down
+local KEY_PITCH_UP = Enum.KeyCode.S -- pull back, nose rises
+local KEY_PITCH_DOWN = Enum.KeyCode.W -- push forward, nose drops
 local KEY_TURN_LEFT = Enum.KeyCode.A
 local KEY_TURN_RIGHT = Enum.KeyCode.D
 local KEY_YAW_LEFT = Enum.KeyCode.Q
@@ -488,9 +492,9 @@ RunService.Heartbeat:Connect(function(dt)
 	elseif not grounded and agl < 60 then
 		message, colour = "TERRAIN  -  PULL UP", RED
 	elseif grounded and speed >= Config.TakeoffSpeed then
-		message, colour = "ROTATE", GREEN
+		message, colour = "ROTATE  -  PULL BACK ON S", GREEN
 	elseif grounded and speed < Config.TakeoffSpeed then
-		message, colour = "HOLD W TO TAKE OFF", GREEN
+		message, colour = "HOLD UP ARROW FOR THROTTLE", GREEN
 	end
 
 	if message then

@@ -321,8 +321,8 @@ function PlaneController:build()
 		nozzle.Parent = model
 
 		local flame = Instance.new("Fire")
-		flame.Heat = 12
-		flame.Size = spec.thrusterSize * 2
+		flame.Heat = Config.ThrusterHeat
+		flame.Size = Config.ThrusterFlameIdle
 		flame.Color = spec.trailColor
 		flame.SecondaryColor = Color3.fromRGB(255, 190, 90)
 		flame.Enabled = false
@@ -330,7 +330,7 @@ function PlaneController:build()
 
 		local glow = Instance.new("PointLight")
 		glow.Color = spec.trailColor
-		glow.Range = 14
+		glow.Range = 10
 		glow.Brightness = 0
 		glow.Parent = nozzle
 
@@ -482,7 +482,6 @@ function PlaneController:placeAt(target: CFrame, speed: number)
 	self.orientation = target - target.Position
 	self.speed = speed
 	self.throttle = math.clamp(speed / math.max(self.maxSpeed, 1), 0, 1)
-	self.sinkRate = 0
 
 	self.model:PivotTo(target * self.fuselage.CFrame:ToObjectSpace(self.model:GetPivot()))
 	self.fuselage.AssemblyLinearVelocity = self.orientation.LookVector * speed
@@ -702,8 +701,15 @@ function PlaneController:step(dt: number)
 	-- Speed
 	--------------------------------------------------------------------------
 	local targetSpeed = self.throttle * self.maxSpeed
-	if airborne and not self.engineOut then
-		targetSpeed = math.max(targetSpeed, self.minFlightSpeed)
+	if airborne then
+		-- An empty tank keeps a floor too, just a lower one. Without thrust the
+		-- aircraft glides exactly as it does with the throttle shut rather than
+		-- dropping: you keep every control, and losing height is a problem you
+		-- solve by pointing the nose somewhere sensible.
+		local floor = if self.engineOut
+			then self.minFlightSpeed * Config.GlideSpeedFactor
+			else self.minFlightSpeed
+		targetSpeed = math.max(targetSpeed, floor)
 	end
 
 	local speedStep = (if targetSpeed > self.speed then Config.Acceleration else Config.Braking) * dt
@@ -714,10 +720,6 @@ function PlaneController:step(dt: number)
 		-- the model, and it is what gives a loop a cost and a dive a payoff.
 		local climbing = orientation.LookVector.Y
 		self.speed -= climbing * Config.GravityDrag * dt
-
-		if self.engineOut then
-			self.speed = math.max(0, self.speed - Config.DeadStickDrag * dt)
-		end
 		self.speed = math.clamp(self.speed, 0, self.maxSpeed * 1.4)
 	end
 
@@ -725,15 +727,6 @@ function PlaneController:step(dt: number)
 	-- Velocity
 	--------------------------------------------------------------------------
 	local velocity = orientation.LookVector * self.speed
-
-	if self.engineOut and airborne then
-		-- Dead stick: gravity takes over and the aircraft sinks whatever the
-		-- nose is doing.
-		self.sinkRate = (self.sinkRate or 0) + Config.DeadStickGravity * dt
-		velocity -= Vector3.new(0, self.sinkRate, 0)
-	else
-		self.sinkRate = 0
-	end
 
 	-- Never drive down through the surface while rolling along it.
 	if not airborne and velocity.Y < 0 then
@@ -771,8 +764,9 @@ function PlaneController:step(dt: number)
 
 	for _, thruster in self.thrusters do
 		thruster.fire.Enabled = self.throttle > 0.05
-		thruster.fire.Size = 6 + 22 * self.throttle
-		thruster.light.Brightness = self.throttle * 2.5
+		thruster.fire.Size = Config.ThrusterFlameIdle
+			+ (Config.ThrusterFlameFull - Config.ThrusterFlameIdle) * self.throttle
+		thruster.light.Brightness = self.throttle * Config.ThrusterLight
 	end
 
 	--------------------------------------------------------------------------

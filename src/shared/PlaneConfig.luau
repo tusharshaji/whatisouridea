@@ -42,7 +42,9 @@ return {
 	PitchRate = math.rad(85), -- nose up/down, arrow keys. Unlimited travel: hold
 	-- it and the aircraft loops.
 	RollRate = math.rad(150), -- A/D. Also unlimited, so it barrel rolls.
-	YawRate = math.rad(35), -- Q/E in the air
+	YawRate = math.rad(18), -- Q/E in the air. Deliberately weak: the rudder is
+	-- for trimming a line through a gate, not for steering, and at any real
+	-- rate it becomes a way to turn without banking at all.
 	GroundSteerRate = math.rad(45), -- Q/E while taxiing
 
 	-- With no roll input the wings drift back toward level, which keeps the
@@ -79,14 +81,16 @@ return {
 	-- Fuel
 	--
 	-- Burn is proportional to throttle, so cruising economically is a real
-	-- decision. Running dry does not kill you outright -- it cuts the engine and
-	-- leaves you gliding, badly, which is usually fatal but occasionally is not.
+	-- decision. Running dry cuts the engine and leaves you gliding: the aircraft
+	-- flies exactly as it does with the throttle shut, a little slower, and you
+	-- keep every control. Losing height is then your problem to solve by
+	-- pointing the nose somewhere sensible, which is a far better punishment
+	-- than being dropped out of the sky with nothing to do about it.
 	--------------------------------------------------------------------------
 	FuelCapacity = 100, -- base tank, before upgrades
 	FuelBurnRate = 2.6, -- units per second at full throttle
 	FuelIdleBurn = 0.35, -- units per second at zero throttle, engine still running
-	DeadStickGravity = 34, -- studs/sec^2 the nose drops with no engine
-	DeadStickDrag = 26, -- studs/sec^2 of speed bled off with no engine
+	GlideSpeedFactor = 0.85, -- gliding floor, as a fraction of MinFlightSpeed
 	FuelWarnFraction = 0.2, -- below this, the HUD starts shouting
 
 	--------------------------------------------------------------------------
@@ -124,6 +128,16 @@ return {
 	--------------------------------------------------------------------------
 	MaxRotorSpeed = 90,
 	RotorSpoolTime = 1.2,
+
+	--------------------------------------------------------------------------
+	-- Jet exhausts. Kept small on purpose: the camera sits directly behind the
+	-- aircraft, so anything dramatic here is painted straight over the gate you
+	-- are trying to fly through.
+	--------------------------------------------------------------------------
+	ThrusterHeat = 4,
+	ThrusterFlameIdle = 1.4, -- flame size at just-above-idle
+	ThrusterFlameFull = 4.5, -- flame size at full throttle
+	ThrusterLight = 1.1, -- brightness of the exhaust glow at full throttle
 
 	--------------------------------------------------------------------------
 	-- Physical make-up

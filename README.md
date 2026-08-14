@@ -54,21 +54,26 @@ You are seated in your own aircraft automatically when you join.
 
 | Key | Action |
 | --- | --- |
-| `W` / `S` | Throttle up / down |
-| `Up` / `Down` | Pitch, with no limit -- hold it and you loop |
+| `Up` / `Down` | Throttle up / down |
+| `S` | Pull back -- nose up. Hold it and you loop. |
+| `W` | Push forward -- nose down |
 | `A` / `D` | Roll, with no limit -- hold it and you barrel roll |
-| `Q` / `E` | Rudder |
+| `Q` / `E` | Rudder, deliberately weak |
 | `R` | Restart the run, back at the runway |
 | `B` | Hangar (only at the runway) |
 | Right-drag | Look around; recentres itself after a moment |
 | Scroll | Camera distance |
 
-Hold `W`; once the centre bar reads `ROTATE`, pull back. Watch `AGL` rather than
-`ALT` -- `ALT` is height above sea level and says nothing about the mountain
-immediately below you.
+The stick is inverted, the way a real one is: push forward to go down.
 
-Fuel burns with throttle. Run dry and the engine quits: you keep the controls
-but you are gliding, sinking, and usually about to become scenery.
+Hold the up arrow; once the centre bar reads `ROTATE`, pull back on `S`. Watch
+`AGL` rather than `ALT` -- `ALT` is height above sea level and says nothing about
+the mountain immediately below you.
+
+Fuel burns with throttle. Run dry and the engine quits, but you keep every
+control and the aircraft glides exactly as it does with the throttle shut, only
+slower. Losing height is then yours to solve by pointing the nose somewhere
+sensible.
 
 ## The flight model
 
