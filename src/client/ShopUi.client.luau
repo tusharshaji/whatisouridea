@@ -1,6 +1,6 @@
 --!strict
 
--- The shop. Toggled with B.
+-- The hangar. Toggled with B, and only usable at the runway.
 --
 -- Prices and effects are read from UpgradeConfig, the same table the server
 -- validates purchases against, so what is on the button is what gets charged.
@@ -11,16 +11,14 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
-local UpgradeConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("UpgradeConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local Theme = require(Shared:WaitForChild("UiTheme"))
+local UpgradeConfig = require(Shared:WaitForChild("UpgradeConfig"))
+
+local C = Theme.Colour
 
 local player = Players.LocalPlayer
 local buyRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("BuyUpgrade") :: RemoteEvent
-
-local ACCENT = Color3.fromRGB(255, 132, 48)
-local WHITE = Color3.fromRGB(235, 235, 240)
-local DIM = Color3.fromRGB(150, 150, 162)
-local GREEN = Color3.fromRGB(120, 230, 140)
-local PANEL = Color3.fromRGB(18, 18, 22)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ShopUi"
@@ -32,183 +30,105 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 local shade = Instance.new("Frame")
 shade.Size = UDim2.fromScale(1, 1)
 shade.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-shade.BackgroundTransparency = 0.45
+shade.BackgroundTransparency = 0.4
 shade.BorderSizePixel = 0
 shade.Parent = screenGui
 
-local window = Instance.new("Frame")
-window.Size = UDim2.new(0, 620, 0, 470)
-window.AnchorPoint = Vector2.new(0.5, 0.5)
-window.Position = UDim2.fromScale(0.5, 0.5)
-window.BackgroundColor3 = PANEL
-window.BorderSizePixel = 0
-window.Parent = screenGui
+local window = Theme.panel(
+	screenGui,
+	UDim2.new(0, 660, 0, 500),
+	UDim2.new(0.5, -330, 0.5, -250)
+)
+Theme.padding(window, 20, 22, 18, 22)
 
-local windowCorner = Instance.new("UICorner")
-windowCorner.CornerRadius = UDim.new(0, 10)
-windowCorner.Parent = window
+local title = Theme.text(window, Theme.Font.Display, 26, C.Text)
+title.Size = UDim2.new(1, 0, 0, 30)
+title.Text = "HANGAR"
 
-local windowPadding = Instance.new("UIPadding")
-windowPadding.PaddingTop = UDim.new(0, 14)
-windowPadding.PaddingLeft = UDim.new(0, 18)
-windowPadding.PaddingRight = UDim.new(0, 18)
-windowPadding.PaddingBottom = UDim.new(0, 14)
-windowPadding.Parent = window
+local pointsChip, pointsLabel = Theme.pill(
+	window,
+	UDim2.new(0, 150, 0, 28),
+	UDim2.new(1, -150, 0, 2),
+	C.Good
+)
+pointsChip.ZIndex = 2
 
-local header = Instance.new("TextLabel")
-header.Size = UDim2.new(1, 0, 0, 28)
-header.BackgroundTransparency = 1
-header.Font = Enum.Font.Code
-header.TextSize = 22
-header.TextColor3 = ACCENT
-header.TextXAlignment = Enum.TextXAlignment.Left
-header.Text = "HANGAR"
-header.Parent = window
-
-local pointsLabel = Instance.new("TextLabel")
-pointsLabel.Size = UDim2.new(1, 0, 0, 22)
-pointsLabel.Position = UDim2.new(0, 0, 0, 28)
-pointsLabel.BackgroundTransparency = 1
-pointsLabel.Font = Enum.Font.Code
-pointsLabel.TextSize = 16
-pointsLabel.TextColor3 = GREEN
-pointsLabel.TextXAlignment = Enum.TextXAlignment.Left
-pointsLabel.Text = ""
-pointsLabel.Parent = window
+local subtitle = Theme.text(window, Theme.Font.Body, 13, C.Muted)
+subtitle.Size = UDim2.new(1, 0, 0, 18)
+subtitle.Position = UDim2.new(0, 0, 0, 32)
+subtitle.Text = "Buying an aircraft rebuilds it and restarts your run."
 
 local scroller = Instance.new("ScrollingFrame")
 scroller.Size = UDim2.new(1, 0, 1, -84)
-scroller.Position = UDim2.new(0, 0, 0, 56)
+scroller.Position = UDim2.new(0, 0, 0, 58)
 scroller.BackgroundTransparency = 1
 scroller.BorderSizePixel = 0
-scroller.ScrollBarThickness = 5
+scroller.ScrollBarThickness = 4
+scroller.ScrollBarImageColor3 = C.Line
 scroller.CanvasSize = UDim2.new()
 scroller.AutomaticCanvasSize = Enum.AutomaticSize.Y
 scroller.Parent = window
 
 local list = Instance.new("UIListLayout")
-list.Padding = UDim.new(0, 6)
+list.Padding = UDim.new(0, 8)
 list.SortOrder = Enum.SortOrder.LayoutOrder
 list.Parent = scroller
 
-local footer = Instance.new("TextLabel")
-footer.Size = UDim2.new(1, 0, 0, 20)
-footer.Position = UDim2.new(0, 0, 1, -20)
-footer.BackgroundTransparency = 1
-footer.Font = Enum.Font.Code
-footer.TextSize = 13
-footer.TextColor3 = DIM
-footer.TextXAlignment = Enum.TextXAlignment.Left
-footer.Text = "B to close  -  buying a new aircraft restarts the run"
-footer.Parent = window
-
--- Shown instead of the hangar when the pilot is out on the course. The server
--- refuses purchases away from the runway regardless; this is so the refusal is
--- explained rather than just felt.
-local awayNotice = Instance.new("TextLabel")
-awayNotice.Size = UDim2.new(0, 460, 0, 90)
-awayNotice.AnchorPoint = Vector2.new(0.5, 0.5)
-awayNotice.Position = UDim2.fromScale(0.5, 0.5)
-awayNotice.BackgroundColor3 = PANEL
-awayNotice.BackgroundTransparency = 0.05
-awayNotice.BorderSizePixel = 0
-awayNotice.Font = Enum.Font.Code
-awayNotice.TextSize = 17
-awayNotice.TextColor3 = Color3.fromRGB(255, 170, 90)
-awayNotice.TextWrapped = true
-awayNotice.Text = "THE HANGAR IS AT THE RUNWAY\n\nLand back at the strip to buy anything."
-awayNotice.Visible = false
-awayNotice.Parent = screenGui
-
-local noticeCorner = Instance.new("UICorner")
-noticeCorner.CornerRadius = UDim.new(0, 10)
-noticeCorner.Parent = awayNotice
+local footer = Theme.text(window, Theme.Font.Body, 12, C.Muted)
+footer.Size = UDim2.new(1, 0, 0, 18)
+footer.Position = UDim2.new(0, 0, 1, -18)
+footer.Text = "B to close"
 
 --------------------------------------------------------------------------------
 -- Rows
 --------------------------------------------------------------------------------
 
-local function sectionLabel(order: number, text: string)
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, -10, 0, 26)
-	label.BackgroundTransparency = 1
-	label.Font = Enum.Font.Code
-	label.TextSize = 15
-	label.TextColor3 = ACCENT
-	label.TextXAlignment = Enum.TextXAlignment.Left
-	label.Text = text
-	label.LayoutOrder = order
-	label.Parent = scroller
-	return label
+local order = 0
+local function nextOrder(): number
+	order += 1
+	return order
 end
 
-type Row = {
-	frame: Frame,
-	title: TextLabel,
-	blurb: TextLabel,
-	button: TextButton,
-}
+local function heading(text: string)
+	local label = Theme.text(scroller, Theme.Font.Display, 14, C.Accent)
+	label.Size = UDim2.new(1, -12, 0, 26)
+	label.Text = text
+	label.LayoutOrder = nextOrder()
+end
 
-local function makeRow(order: number): Row
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(1, -10, 0, 62)
-	frame.BackgroundColor3 = Color3.fromRGB(30, 30, 36)
-	frame.BorderSizePixel = 0
-	frame.LayoutOrder = order
-	frame.Parent = scroller
+type Row = { title: TextLabel, blurb: TextLabel, stats: TextLabel, button: TextButton }
 
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 6)
-	corner.Parent = frame
+local function makeRow(): Row
+	local card = Theme.card(scroller, 74)
+	card.Size = UDim2.new(1, -12, 0, 74)
+	card.LayoutOrder = nextOrder()
 
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, -150, 0, 24)
-	title.Position = UDim2.new(0, 12, 0, 8)
-	title.BackgroundTransparency = 1
-	title.Font = Enum.Font.Code
-	title.TextSize = 16
-	title.TextColor3 = WHITE
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Parent = frame
+	local titleLabel = Theme.text(card, Theme.Font.Display, 16, C.Text)
+	titleLabel.Size = UDim2.new(1, -190, 0, 20)
+	titleLabel.Position = UDim2.new(0, 16, 0, 10)
 
-	local blurb = Instance.new("TextLabel")
-	blurb.Size = UDim2.new(1, -150, 0, 20)
-	blurb.Position = UDim2.new(0, 12, 0, 32)
-	blurb.BackgroundTransparency = 1
-	blurb.Font = Enum.Font.Code
-	blurb.TextSize = 12
-	blurb.TextColor3 = DIM
-	blurb.TextXAlignment = Enum.TextXAlignment.Left
-	blurb.Parent = frame
+	local blurb = Theme.text(card, Theme.Font.Body, 12, C.Muted)
+	blurb.Size = UDim2.new(1, -190, 0, 16)
+	blurb.Position = UDim2.new(0, 16, 0, 32)
 
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, 124, 0, 38)
-	button.Position = UDim2.new(1, -136, 0, 12)
-	button.BackgroundColor3 = ACCENT
-	button.BorderSizePixel = 0
-	button.Font = Enum.Font.Code
-	button.TextSize = 14
-	button.TextColor3 = Color3.fromRGB(20, 20, 20)
-	button.AutoButtonColor = true
-	button.Parent = frame
+	local stats = Theme.text(card, Theme.Font.Strong, 11, C.Line)
+	stats.Size = UDim2.new(1, -190, 0, 14)
+	stats.Position = UDim2.new(0, 16, 0, 50)
+	stats.TextColor3 = Color3.fromRGB(120, 130, 148)
 
-	local buttonCorner = Instance.new("UICorner")
-	buttonCorner.CornerRadius = UDim.new(0, 5)
-	buttonCorner.Parent = button
+	local button = Theme.button(card, 44, "", C.Accent, C.AccentDeep)
+	button.Size = UDim2.new(0, 150, 0, 44)
+	button.Position = UDim2.new(1, -166, 0, 15)
 
-	return { frame = frame, title = title, blurb = blurb, button = button }
+	return { title = titleLabel, blurb = blurb, stats = stats, button = button }
 end
 
 local planeRows: { [string]: Row } = {}
 local upgradeRows: { [string]: Row } = {}
 
-local order = 0
-order += 1
-sectionLabel(order, "AIRCRAFT")
-
+heading("AIRCRAFT")
 for _, plane in UpgradeConfig.Planes do
-	order += 1
-	local row = makeRow(order)
+	local row = makeRow()
 	row.title.Text = plane.name
 	row.blurb.Text = plane.blurb
 	row.button.Activated:Connect(function()
@@ -217,18 +137,37 @@ for _, plane in UpgradeConfig.Planes do
 	planeRows[plane.id] = row
 end
 
-order += 1
-sectionLabel(order, "UPGRADES")
-
+heading("UPGRADES")
 for _, upgrade in UpgradeConfig.Upgrades do
-	order += 1
-	local row = makeRow(order)
+	local row = makeRow()
 	row.blurb.Text = upgrade.blurb
 	row.button.Activated:Connect(function()
 		buyRemote:FireServer({ kind = "upgrade", id = upgrade.id })
 	end)
 	upgradeRows[upgrade.id] = row
 end
+
+--------------------------------------------------------------------------------
+-- Away from the runway
+--------------------------------------------------------------------------------
+
+local awayNotice = Theme.panel(
+	screenGui,
+	UDim2.new(0, 480, 0, 130),
+	UDim2.new(0.5, -240, 0.5, -65)
+)
+awayNotice.Visible = false
+
+local awayTitle = Theme.text(awayNotice, Theme.Font.Display, 20, C.Warn, Enum.TextXAlignment.Center)
+awayTitle.Size = UDim2.new(1, 0, 0, 26)
+awayTitle.Position = UDim2.new(0, 0, 0, 30)
+awayTitle.Text = "THE HANGAR IS AT THE RUNWAY"
+
+local awayBody = Theme.text(awayNotice, Theme.Font.Body, 14, C.Muted, Enum.TextXAlignment.Center)
+awayBody.Size = UDim2.new(1, -40, 0, 40)
+awayBody.Position = UDim2.new(0, 20, 0, 62)
+awayBody.TextWrapped = true
+awayBody.Text = "Land back at the strip to buy anything."
 
 --------------------------------------------------------------------------------
 -- State
@@ -248,30 +187,26 @@ local function refresh()
 	local current = player:GetAttribute("PlaneId")
 	local owned = ownedPlanes()
 
-	pointsLabel.Text = string.format("%d points to spend", points)
+	pointsLabel.Text = string.format("%d POINTS", points)
 
 	for _, plane in UpgradeConfig.Planes do
 		local row = planeRows[plane.id]
-		local stats = string.format(
-			"spd x%.2f  turn x%.2f  climb x%.2f",
+		row.stats.Text = string.format(
+			"SPEED ×%.2f     TURN ×%.2f     PITCH ×%.2f     FUEL ×%.2f",
 			plane.speed,
 			plane.handling,
-			plane.climb
+			plane.climb,
+			plane.fuel
 		)
-		row.title.Text = `{plane.name}   {stats}`
 
 		if plane.id == current then
-			row.button.Text = "FLYING"
-			row.button.BackgroundColor3 = Color3.fromRGB(70, 80, 95)
+			Theme.setButton(row.button, "FLYING", C.InkRaised, C.Ink, true)
 		elseif owned[plane.id] then
-			row.button.Text = "SELECT"
-			row.button.BackgroundColor3 = GREEN
+			Theme.setButton(row.button, "SELECT", C.Good, C.GoodDeep)
 		elseif points >= plane.cost then
-			row.button.Text = string.format("BUY  %d", plane.cost)
-			row.button.BackgroundColor3 = ACCENT
+			Theme.setButton(row.button, string.format("BUY   %d", plane.cost), C.Accent, C.AccentDeep)
 		else
-			row.button.Text = string.format("%d", plane.cost)
-			row.button.BackgroundColor3 = Color3.fromRGB(70, 60, 60)
+			Theme.setButton(row.button, string.format("%d", plane.cost), C.Trough, C.InkRaised, true)
 		end
 	end
 
@@ -280,23 +215,20 @@ local function refresh()
 		local level = player:GetAttribute("Level_" .. upgrade.id) or 0
 		local cost = UpgradeConfig.upgradeCost(upgrade, level)
 
-		row.title.Text = string.format(
-			"%s   level %d / %d   (+%d%% each)",
-			upgrade.name,
+		row.title.Text = upgrade.name
+		row.stats.Text = string.format(
+			"LEVEL %d / %d     +%d%% EACH",
 			level,
 			upgrade.levels,
 			math.floor(upgrade.perLevel * 100 + 0.5)
 		)
 
 		if not cost then
-			row.button.Text = "MAXED"
-			row.button.BackgroundColor3 = Color3.fromRGB(70, 80, 95)
+			Theme.setButton(row.button, "MAXED", C.InkRaised, C.Ink, true)
 		elseif points >= cost then
-			row.button.Text = string.format("BUY  %d", cost)
-			row.button.BackgroundColor3 = ACCENT
+			Theme.setButton(row.button, string.format("BUY   %d", cost), C.Accent, C.AccentDeep)
 		else
-			row.button.Text = string.format("%d", cost)
-			row.button.BackgroundColor3 = Color3.fromRGB(70, 60, 60)
+			Theme.setButton(row.button, string.format("%d", cost), C.Trough, C.InkRaised, true)
 		end
 	end
 end
@@ -319,7 +251,6 @@ local function setOpen(open: boolean)
 	end
 
 	local here = atSpawn()
-	shade.Visible = true
 	window.Visible = here
 	awayNotice.Visible = not here
 
@@ -334,8 +265,8 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	end
 end)
 
--- Fly away with the hangar open and it closes itself, rather than leaving a
--- window full of buttons the server is going to refuse.
+-- Fly away with the hangar open and it changes to the notice, rather than
+-- leaving a window full of buttons the server is going to refuse.
 player:GetAttributeChangedSignal("AtSpawn"):Connect(function()
 	if screenGui.Enabled then
 		setOpen(true)

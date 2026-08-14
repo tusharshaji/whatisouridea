@@ -184,6 +184,7 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `src/client/PlaneControls.client.luau` | Input and the flight panel |
 | `src/client/RingHud.client.luau` | Score, gate marker, and drawing your rings |
 | `src/client/ShopUi.client.luau` | The hangar |
+| `src/shared/UiTheme.luau` | Fonts, palette and UI building blocks |
 | `src/shared/PlaneConfig.luau` | Every handling value |
 | `src/shared/PlaneModels.luau` | What each aircraft is made of |
 | `src/shared/RingConfig.luau` | Every course and scoring value |
@@ -237,6 +238,13 @@ UI inside a container.
 
 **Panels that list things use `AutomaticSize`.** Fixed heights were smaller than
 the content and the last few rows rendered outside the background.
+
+**All UI goes through `UiTheme`.** Every screen used to build its own labels in
+`Font.Code`, a monospace face meant for source listings, which combined with
+terminal-style abbreviations made the game look like a debug overlay. The theme
+holds the font stack, the palette and the building blocks -- panels, cards,
+meters, buttons, pills -- so screens stay consistent and none of them reach for a
+raw `Instance.new("TextLabel")` with a hand-picked colour.
 
 **Rings are drawn by the client, for its own course only.** They were server
 instances once, which meant everyone could see everyone's rings and one pilot

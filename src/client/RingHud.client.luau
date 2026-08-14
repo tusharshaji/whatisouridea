@@ -18,19 +18,17 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
 
-local RingConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("RingConfig"))
-local UpgradeConfig = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("UpgradeConfig"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local RingConfig = require(Shared:WaitForChild("RingConfig"))
+local Theme = require(Shared:WaitForChild("UiTheme"))
+local UpgradeConfig = require(Shared:WaitForChild("UpgradeConfig"))
+
+local C = Theme.Colour
 
 local player = Players.LocalPlayer
 local remotes = ReplicatedStorage:WaitForChild("Remotes")
 local courseRemote = remotes:WaitForChild("CourseData") :: RemoteEvent
 local eventRemote = remotes:WaitForChild("GameEvent") :: RemoteEvent
-
-local ACCENT = Color3.fromRGB(255, 132, 48)
-local WHITE = Color3.fromRGB(235, 235, 240)
-local DIM = Color3.fromRGB(150, 150, 162)
-local GREEN = Color3.fromRGB(120, 230, 140)
-local RED = Color3.fromRGB(240, 96, 96)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RingHud"
@@ -38,105 +36,77 @@ screenGui.ResetOnSpawn = false
 screenGui.IgnoreGuiInset = true
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
---------------------------------------------------------------------------------
--- Scoreboard
---------------------------------------------------------------------------------
-
--- Parked off the top of the screen. It drops into view on takeoff, so the
--- runway is uncluttered and the scoreboard arriving is itself the cue that the
--- run has started.
-local BOARD_HIDDEN = UDim2.new(0.5, -160, 0, -150)
-local BOARD_SHOWN = UDim2.new(0.5, -160, 0, 16)
-
-local board = Instance.new("Frame")
-board.Size = UDim2.new(0, 320, 0, 126)
-board.Position = BOARD_HIDDEN
-board.BackgroundColor3 = Color3.fromRGB(10, 12, 16)
-board.BackgroundTransparency = 0.2
-board.BorderSizePixel = 0
-board.Parent = screenGui
-
-local boardStroke = Instance.new("UIStroke")
-boardStroke.Color = Color3.fromRGB(60, 66, 78)
-boardStroke.Parent = board
-
-local boardCorner = Instance.new("UICorner")
-boardCorner.CornerRadius = UDim.new(0, 8)
-boardCorner.Parent = board
-
-local boardPadding = Instance.new("UIPadding")
-boardPadding.PaddingTop = UDim.new(0, 8)
-boardPadding.PaddingLeft = UDim.new(0, 14)
-boardPadding.PaddingRight = UDim.new(0, 14)
-boardPadding.Parent = board
-
-local boardLayout = Instance.new("UIListLayout")
-boardLayout.Padding = UDim.new(0, 1)
-boardLayout.SortOrder = Enum.SortOrder.LayoutOrder
-boardLayout.Parent = board
-
-local function boardLabel(order: number, height: number, size: number, color: Color3): TextLabel
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, height)
-	label.BackgroundTransparency = 1
-	label.TextColor3 = color
-	label.Font = Enum.Font.Code
-	label.TextSize = size
-	label.TextXAlignment = Enum.TextXAlignment.Center
-	label.Text = ""
-	label.LayoutOrder = order
-	label.Parent = board
-	return label
+local function number(name: string): number
+	local value = player:GetAttribute(name)
+	return if type(value) == "number" then value else 0
 end
 
-local scoreLabel = boardLabel(1, 34, 30, WHITE)
-local comboLabel = boardLabel(2, 20, 17, ACCENT)
-local gateLabel = boardLabel(3, 18, 14, DIM)
-local pointsLabel = boardLabel(4, 18, 14, GREEN)
-local planeLabel = boardLabel(5, 18, 13, DIM)
+--------------------------------------------------------------------------------
+-- Scoreboard
+--
+-- Parked off the top of the screen. It drops in on takeoff, so the runway is
+-- uncluttered and the board arriving is itself the cue that the run has begun.
+--------------------------------------------------------------------------------
+
+local BOARD_HIDDEN = UDim2.new(0.5, -170, 0, -160)
+local BOARD_SHOWN = UDim2.new(0.5, -170, 0, 20)
+
+local board = Theme.panel(screenGui, UDim2.new(0, 340, 0, 122), BOARD_HIDDEN)
+
+local scoreValue = Theme.text(board, Theme.Font.Display, 40, C.Text, Enum.TextXAlignment.Center)
+scoreValue.Size = UDim2.new(1, 0, 0, 44)
+scoreValue.Position = UDim2.new(0, 0, 0, 10)
+
+local scoreCaption = Theme.text(board, Theme.Font.Strong, 11, C.Muted, Enum.TextXAlignment.Center)
+scoreCaption.Size = UDim2.new(1, 0, 0, 12)
+scoreCaption.Position = UDim2.new(0, 0, 0, 52)
+scoreCaption.Text = "SCORE"
+
+local comboPill, comboLabel = Theme.pill(
+	board,
+	UDim2.new(0, 128, 0, 24),
+	UDim2.new(0.5, -64, 0, 70),
+	C.Accent
+)
+comboPill.Visible = false
+
+local gatePill, gateLabel = Theme.pill(board, UDim2.new(0, 96, 0, 22), UDim2.new(0, 16, 0, 90), C.Muted)
+local pointsPill, pointsLabel = Theme.pill(board, UDim2.new(0, 110, 0, 22), UDim2.new(1, -126, 0, 90), C.Good)
+
+-- Sits in the gap between the two pills rather than across the whole board,
+-- which would put it underneath both of them.
+local planeLabel = Theme.text(board, Theme.Font.Strong, 11, C.Muted, Enum.TextXAlignment.Center)
+planeLabel.Size = UDim2.new(0, 100, 0, 22)
+planeLabel.Position = UDim2.new(0, 120, 0, 90)
 
 --------------------------------------------------------------------------------
 -- Gate marker
 --------------------------------------------------------------------------------
 
-local marker = Instance.new("TextLabel")
-marker.Size = UDim2.new(0, 200, 0, 46)
+local marker = Theme.text(screenGui, Theme.Font.Strong, 14, C.Accent, Enum.TextXAlignment.Center)
+marker.Size = UDim2.new(0, 220, 0, 44)
 marker.AnchorPoint = Vector2.new(0.5, 0.5)
-marker.BackgroundTransparency = 1
-marker.TextColor3 = ACCENT
-marker.Font = Enum.Font.Code
-marker.TextSize = 15
-marker.Text = ""
+marker.TextStrokeTransparency = 0.55
 marker.Visible = false
-marker.Parent = screenGui
 
-local arrow = Instance.new("TextLabel")
+local arrow = Theme.text(screenGui, Theme.Font.Display, 30, C.Accent, Enum.TextXAlignment.Center)
 arrow.Size = UDim2.new(0, 40, 0, 40)
 arrow.AnchorPoint = Vector2.new(0.5, 0.5)
-arrow.BackgroundTransparency = 1
-arrow.TextColor3 = ACCENT
-arrow.Font = Enum.Font.GothamBold
-arrow.TextSize = 30
+arrow.TextStrokeTransparency = 0.5
 arrow.Text = "\u{25B2}"
 arrow.Visible = false
-arrow.Parent = screenGui
 
 --------------------------------------------------------------------------------
 -- Popups
 --------------------------------------------------------------------------------
 
-local function popup(text: string, color: Color3, size: number)
-	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(0, 460, 0, 56)
+local function popup(text: string, colour: Color3, size: number)
+	local label = Theme.text(screenGui, Theme.Font.Display, size, colour, Enum.TextXAlignment.Center)
+	label.Size = UDim2.new(0, 500, 0, 60)
 	label.AnchorPoint = Vector2.new(0.5, 0.5)
 	label.Position = UDim2.new(0.5, 0, 0.36, 0)
-	label.BackgroundTransparency = 1
-	label.TextColor3 = color
-	label.Font = Enum.Font.Code
-	label.TextSize = size
+	label.TextStrokeTransparency = 0.45
 	label.Text = text
-	label.TextStrokeTransparency = 0.6
-	label.Parent = screenGui
 
 	local rise = TweenService:Create(
 		label,
@@ -218,15 +188,9 @@ local function buildGate(index: number, center: Vector3, normal: Vector3, radius
 	return { center = center, normal = normal, radius = radius, parts = parts, faded = false }
 end
 
--- Light the active gate, dim the next few, hide the rest. All thirty at once is
--- a wall of rings you cannot pick a line through.
---
--- A gate that has just been flown fades away rather than snapping to a colour:
--- it flashes green on the way out, which is the confirmation you get without
--- having to look at the scoreboard, and then leaves the sky clear behind you.
-local function styleGate(gate: Gate, color: Color3, transparency: number, animate: boolean)
+local function styleGate(gate: Gate, colour: Color3, transparency: number, animate: boolean)
 	for _, part in gate.parts do
-		part.Color = color
+		part.Color = colour
 		if animate then
 			TweenService:Create(
 				part,
@@ -239,13 +203,14 @@ local function styleGate(gate: Gate, color: Color3, transparency: number, animat
 	end
 end
 
+-- Light the active gate, dim the next few, hide the rest. All thirty at once is
+-- a wall of rings you cannot pick a line through. The one just flown fades away
+-- behind you, which is the confirmation you get without looking at the score.
 local function refreshVisibility()
 	local active = player:GetAttribute("ActiveGate") or 1
 
 	for index, gate in gates do
 		if index < active then
-			-- Fade out behind you. Only the one just passed animates; anything
-			-- further back is already gone.
 			local justPassed = index == active - 1
 			if justPassed and not gate.faded then
 				gate.faded = true
@@ -293,22 +258,22 @@ eventRemote.OnClientEvent:Connect(function(payload)
 			then "PERFECT"
 			elseif payload.accuracy > 0.5 then "CLEAN"
 			else "GATE"
-		popup(string.format("%s  +%d", grade, payload.points), GREEN, 30)
+		popup(string.format("%s   +%d", grade, payload.points), C.Good, 32)
 	elseif payload.kind == "miss" then
-		popup("MISSED", RED, 28)
+		popup("MISSED", C.Bad, 28)
 	elseif payload.kind == "crash" then
-		popup("CRASHED  -  RUN LOST", RED, 32)
+		popup("CRASHED — RUN LOST", C.Bad, 32)
 	elseif payload.kind == "complete" then
-		popup(string.format("LAP %d CLEAR  +%d", payload.lap, payload.bonus), ACCENT, 30)
+		popup(string.format("LAP %d CLEAR   +%d", payload.lap, payload.bonus), C.Accent, 32)
 	elseif payload.kind == "bought" then
-		popup(payload.name .. " EQUIPPED", GREEN, 26)
+		popup(string.upper(payload.name) .. " EQUIPPED", C.Good, 26)
 	elseif payload.kind == "denied" then
-		popup(payload.reason, RED, 24)
+		popup(string.upper(payload.reason), C.Bad, 24)
 	end
 end)
 
 --------------------------------------------------------------------------------
--- Per-frame
+-- Per frame
 --------------------------------------------------------------------------------
 
 local function pinToEdge(direction: Vector2, middle: Vector2, margin: number): Vector2
@@ -318,12 +283,6 @@ local function pinToEdge(direction: Vector2, middle: Vector2, margin: number): V
 	return middle + unit * math.min(reachX, reachY)
 end
 
-local function number(name: string): number
-	local value = player:GetAttribute(name)
-	return if type(value) == "number" then value else 0
-end
-
--- Slide the scoreboard in on takeoff and out again on landing.
 local boardShown = false
 
 local function setBoardShown(shown: boolean)
@@ -341,28 +300,28 @@ end
 
 RunService.RenderStepped:Connect(function()
 	-- Airborne, or already scoring: a pilot who lands mid-run keeps the board.
-	setBoardShown(
-		player:GetAttribute("Grounded") == false
-			or number("Score") > 0
-	)
+	setBoardShown(player:GetAttribute("Grounded") == false or number("Score") > 0)
 
-	scoreLabel.Text = string.format("%d", number("Score"))
+	scoreValue.Text = string.format("%d", number("Score"))
 
 	local combo = number("Combo")
 	if combo > 1 then
-		comboLabel.Text = string.format("x%.2f  -  %d IN A ROW", number("Multiplier"), combo)
+		comboPill.Visible = true
+		comboLabel.Text = string.format("×%.2f   %d IN A ROW", number("Multiplier"), combo)
+		scoreCaption.Text = "SCORE"
 	else
-		comboLabel.Text = string.format("BEST %d", number("Best"))
+		comboPill.Visible = false
+		scoreCaption.Text = string.format("SCORE     BEST %d", number("Best"))
 	end
 
 	local active = number("ActiveGate")
 	local total = number("TotalGates")
-	gateLabel.Text = string.format("GATE %d / %d", math.min(active, total), total)
-	pointsLabel.Text = string.format("%d POINTS TO SPEND", number("Points"))
+	gateLabel.Text = string.format("GATE %d/%d", math.min(active, total), total)
+	pointsLabel.Text = string.format("%d PTS", number("Points"))
 
 	local planeId = player:GetAttribute("PlaneId")
 	local plane = if type(planeId) == "string" then UpgradeConfig.findPlane(planeId) else nil
-	planeLabel.Text = if plane then string.upper(plane.name) .. "  -  B FOR SHOP" else "B FOR SHOP"
+	planeLabel.Text = if plane then string.upper(plane.name) else ""
 
 	local gate = gates[active]
 	local camera = Workspace.CurrentCamera
@@ -379,7 +338,7 @@ RunService.RenderStepped:Connect(function()
 
 	if onScreen and projected.Z > 0 then
 		marker.Position = UDim2.new(0, projected.X, 0, projected.Y)
-		marker.Text = string.format("%d studs  -  gate %d wide", distance, gate.radius * 2)
+		marker.Text = string.format("%d studs   •   %d wide", distance, gate.radius * 2)
 		marker.Visible = true
 		arrow.Visible = false
 	else
