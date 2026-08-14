@@ -44,6 +44,31 @@ local function ownPlane(): Model?
 	return folder:FindFirstChild(`Plane_{player.UserId}`) :: Model?
 end
 
+-- The aircraft only if you are actually sitting in it.
+--
+-- Checking that the plane merely exists is not enough, and was the reason the
+-- chase view would not let go: your aeroplane exists the whole time you are
+-- alive, so climbing out, dying, or walking around left the camera still bolted
+-- to an aircraft you were nowhere near.
+local function flownPlane(): (Model?, BasePart?)
+	local plane = ownPlane()
+	if not plane then
+		return nil, nil
+	end
+
+	local seat = plane:FindFirstChild("PilotSeat")
+	if not seat or not seat:IsA("VehicleSeat") then
+		return nil, nil
+	end
+
+	local occupant = seat.Occupant
+	if not occupant or occupant.Parent ~= player.Character then
+		return nil, nil
+	end
+
+	return plane, (plane.PrimaryPart or plane:FindFirstChild("Fuselage")) :: BasePart?
+end
+
 -- Everything the camera must not collide with or see through: every aircraft,
 -- every character, and this client's own ring course.
 local function refreshFilter()
@@ -133,15 +158,21 @@ RunService:BindToRenderStep("PlaneCamera", Enum.RenderPriority.Camera.Value, fun
 		return
 	end
 
-	local plane = ownPlane()
-	local root = plane and (plane.PrimaryPart or plane:FindFirstChild("Fuselage")) :: BasePart?
+	local _, root = flownPlane()
 
 	if not root then
-		-- No aeroplane: hand the camera back to Roblox so walking around works.
+		-- Out of the cockpit: hand the camera straight back to Roblox so walking
+		-- around behaves normally, and forget the chase pose so re-entering
+		-- snaps to the aircraft rather than sweeping in from wherever it was.
 		if camera.CameraType == Enum.CameraType.Scriptable then
 			camera.CameraType = Enum.CameraType.Custom
 		end
+		if looking then
+			looking = false
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		end
 		rig = nil
+		yawOffset, pitchOffset = 0, 0
 		return
 	end
 

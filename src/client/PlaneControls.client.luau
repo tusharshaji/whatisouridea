@@ -155,11 +155,19 @@ local horizonCorner = Instance.new("UICorner")
 horizonCorner.CornerRadius = UDim.new(1, 0)
 horizonCorner.Parent = horizonHolder
 
--- Ground: a very large slab with its top face exactly at y = 0. The camera sits
--- at y = 0 too, so with the aircraft level the horizon lands dead centre.
+-- Ground: an enormous slab with its top face at y = 0.
+--
+-- The camera has to sit ABOVE it, not level with it. Put the camera at y = 0 as
+-- well and the top face is exactly edge-on, so it projects to an infinitely thin
+-- line and the instrument shows nothing but sky. From HORIZON_EYE up, the ground
+-- fills the lower half of the view and its far edge lands within a tenth of a
+-- degree of the true horizon, which is why the slab is so much wider than the
+-- camera is high.
+local HORIZON_EYE = 30
+
 local groundSlab = Instance.new("Part")
-groundSlab.Size = Vector3.new(4000, 2, 4000)
-groundSlab.CFrame = CFrame.new(0, -1, 0)
+groundSlab.Size = Vector3.new(40000, 20, 40000)
+groundSlab.CFrame = CFrame.new(0, -10, 0)
 groundSlab.Color = Color3.fromRGB(112, 82, 52)
 groundSlab.Material = Enum.Material.SmoothPlastic
 groundSlab.Anchored = true
@@ -369,12 +377,30 @@ local function axis(negative: Enum.KeyCode, positive: Enum.KeyCode): number
 	return value
 end
 
-local function ownPlane(): Model?
+-- Your aircraft, and only while you are sitting in it. The cockpit should not
+-- be on screen while you are standing on the tarmac looking at the thing.
+local function flownPlane(): Model?
 	local folder = Workspace:FindFirstChild("Planes")
 	if not folder then
 		return nil
 	end
-	return folder:FindFirstChild(`Plane_{player.UserId}`) :: Model?
+
+	local plane = folder:FindFirstChild(`Plane_{player.UserId}`)
+	if not plane then
+		return nil
+	end
+
+	local seat = plane:FindFirstChild("PilotSeat")
+	if not seat or not seat:IsA("VehicleSeat") then
+		return nil
+	end
+
+	local occupant = seat.Occupant
+	if not occupant or occupant.Parent ~= player.Character then
+		return nil
+	end
+
+	return plane :: Model
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -394,10 +420,11 @@ local flashClock = 0
 local sinceSend = 0
 
 RunService.Heartbeat:Connect(function(dt)
-	local plane = ownPlane()
+	local plane = flownPlane()
 	panel.Visible = plane ~= nil
-	settingsButton.Visible = plane ~= nil
 	if not plane then
+		-- Out of the cockpit. The settings button stays, so the controls can
+		-- still be read while on foot.
 		alertBar.Visible = false
 		return
 	end
@@ -439,8 +466,10 @@ RunService.Heartbeat:Connect(function(dt)
 
 	-- Horizon: point the little camera the way the aeroplane is pointing, minus
 	-- the heading. Rx(pitch) * Rz(bank) is the attitude with yaw dropped, which
-	-- is exactly what an attitude indicator shows.
-	horizonCamera.CFrame = CFrame.Angles(math.rad(pitch), 0, math.rad(bank))
+	-- is exactly what an attitude indicator shows. Rotation is about the eye
+	-- point, so the translation comes first.
+	horizonCamera.CFrame = CFrame.new(0, HORIZON_EYE, 0)
+		* CFrame.Angles(math.rad(pitch), 0, math.rad(bank))
 
 	----------------------------------------------------------------------------
 	-- Warnings, in priority order, flashing so they cannot be tuned out
