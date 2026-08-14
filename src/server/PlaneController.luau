@@ -647,7 +647,16 @@ function PlaneController:step(dt: number)
 	local orientation = self.orientation
 
 	if airborne then
-		local pitch = -controls.pitch * self.pitchRate * dt
+		-- Signs, worked out rather than guessed. These are rotations about the
+		-- aircraft's own axes, applied as orientation * CFrame.Angles(x, y, z).
+		--
+		--   +X  raises the nose      (LookVector goes to (0, sin, -cos))
+		--   +Z  raises the RIGHT wing, so rolling right needs a negative angle
+		--   +Y  yaws LEFT,           so yawing right needs a negative angle
+		--
+		-- Pitch used to carry the same minus as the other two, which quietly
+		-- made a positive pitch input push the nose down.
+		local pitch = controls.pitch * self.pitchRate * dt
 		local roll = -controls.roll * self.rollRate * dt
 		local yaw = -controls.yaw * self.yawRate * dt
 

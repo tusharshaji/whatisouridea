@@ -55,8 +55,8 @@ You are seated in your own aircraft automatically when you join.
 | Key | Action |
 | --- | --- |
 | `Up` / `Down` | Throttle up / down |
-| `S` | Pull back -- nose up. Hold it and you loop. |
-| `W` | Push forward -- nose down |
+| `W` | Nose up. Hold it and you loop. |
+| `S` | Nose down |
 | `A` / `D` | Roll, with no limit -- hold it and you barrel roll |
 | `Q` / `E` | Rudder, deliberately weak |
 | `R` | Restart the run, back at the runway |
@@ -64,9 +64,10 @@ You are seated in your own aircraft automatically when you join.
 | Right-drag | Look around; recentres itself after a moment |
 | Scroll | Camera distance |
 
-The stick is inverted, the way a real one is: push forward to go down.
+Set `InvertPitch` in `PlaneConfig.luau` to swap `W` and `S`, for a stick that
+works the way a real one does.
 
-Hold the up arrow; once the centre bar reads `ROTATE`, pull back on `S`. Watch
+Hold the up arrow; once the centre bar reads `ROTATE`, hold `W`. Watch
 `AGL` rather than `ALT` -- `ALT` is height above sea level and says nothing about
 the mountain immediately below you.
 

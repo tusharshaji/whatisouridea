@@ -39,8 +39,10 @@ return {
 	-- Attitude rates. These are how fast the aircraft rotates about its own
 	-- axes, and they are the whole of the handling model.
 	--------------------------------------------------------------------------
-	PitchRate = math.rad(85), -- nose up/down, arrow keys. Unlimited travel: hold
+	PitchRate = math.rad(85), -- nose up/down on W and S. Unlimited travel: hold
 	-- it and the aircraft loops.
+	InvertPitch = false, -- false is W nose up, S nose down. True swaps them, for
+	-- a stick that works the way a real one does.
 	RollRate = math.rad(150), -- A/D. Also unlimited, so it barrel rolls.
 	YawRate = math.rad(18), -- Q/E in the air. Deliberately weak: the rudder is
 	-- for trimming a line through a gate, not for steering, and at any real

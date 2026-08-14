@@ -320,8 +320,8 @@ end
 
 settingsRow(1, "CONTROLS", ACCENT, 16)
 settingsRow(2, "UP / DOWN    throttle", WHITE, 14)
-settingsRow(3, "S            pull back, nose up", WHITE, 14)
-settingsRow(4, "W            push forward, nose down", WHITE, 14)
+settingsRow(3, "W            nose up", WHITE, 14)
+settingsRow(4, "S            nose down", WHITE, 14)
 settingsRow(5, "A / D        roll, no limit", WHITE, 14)
 settingsRow(6, "Q / E        rudder", WHITE, 14)
 settingsRow(7, "R            restart run", WHITE, 14)
@@ -332,11 +332,11 @@ settingsRow(11, "RIGHT DRAG   look around", WHITE, 14)
 settingsRow(12, "SCROLL       zoom in / out", WHITE, 14)
 settingsRow(13, "             recentres on its own", DIM, 12)
 settingsRow(14, "", DIM, 6)
-settingsRow(15, "The stick is inverted, like a real", DIM, 12)
-settingsRow(16, "one. Hold S through the vertical", DIM, 12)
-settingsRow(17, "and the aircraft loops. Wings level", DIM, 12)
-settingsRow(18, "themselves only while upright, so", DIM, 12)
-settingsRow(19, "inverted flight holds.", DIM, 12)
+settingsRow(15, "Hold W through the vertical and the", DIM, 12)
+settingsRow(16, "aircraft loops. Wings level them-", DIM, 12)
+settingsRow(17, "selves only while upright, so", DIM, 12)
+settingsRow(18, "inverted flight holds.", DIM, 12)
+settingsRow(19, "", DIM, 2)
 settingsRow(20, "", DIM, 6)
 settingsRow(21, "Watch AGL, not ALT. Fuel burns", DIM, 12)
 settingsRow(22, "with throttle; empty means glide.", DIM, 12)
@@ -359,12 +359,12 @@ end)
 -- Input
 --------------------------------------------------------------------------------
 
--- Arrows are the throttle. W and S are the stick, inverted the way a real one
--- is: push forward for the nose down, pull back for the nose up.
+-- Arrows are the throttle. W and S are pitch: W noses up, S noses down.
+-- Set PlaneConfig.InvertPitch to swap those two if you want a real stick.
 local KEY_THROTTLE_UP = Enum.KeyCode.Up
 local KEY_THROTTLE_DOWN = Enum.KeyCode.Down
-local KEY_PITCH_UP = Enum.KeyCode.S -- pull back, nose rises
-local KEY_PITCH_DOWN = Enum.KeyCode.W -- push forward, nose drops
+local KEY_PITCH_UP = Enum.KeyCode.W
+local KEY_PITCH_DOWN = Enum.KeyCode.S
 local KEY_TURN_LEFT = Enum.KeyCode.A
 local KEY_TURN_RIGHT = Enum.KeyCode.D
 local KEY_YAW_LEFT = Enum.KeyCode.Q
@@ -492,7 +492,7 @@ RunService.Heartbeat:Connect(function(dt)
 	elseif not grounded and agl < 60 then
 		message, colour = "TERRAIN  -  PULL UP", RED
 	elseif grounded and speed >= Config.TakeoffSpeed then
-		message, colour = "ROTATE  -  PULL BACK ON S", GREEN
+		message, colour = "ROTATE  -  HOLD W", GREEN
 	elseif grounded and speed < Config.TakeoffSpeed then
 		message, colour = "HOLD UP ARROW FOR THROTTLE", GREEN
 	end
@@ -515,9 +515,14 @@ RunService.Heartbeat:Connect(function(dt)
 	end
 	sinceSend = 0
 
+	local pitchInput = axis(KEY_PITCH_DOWN, KEY_PITCH_UP)
+	if Config.InvertPitch then
+		pitchInput = -pitchInput
+	end
+
 	inputRemote:FireServer({
 		throttle = axis(KEY_THROTTLE_DOWN, KEY_THROTTLE_UP),
-		pitch = axis(KEY_PITCH_DOWN, KEY_PITCH_UP),
+		pitch = pitchInput,
 		roll = axis(KEY_TURN_LEFT, KEY_TURN_RIGHT),
 		yaw = axis(KEY_YAW_LEFT, KEY_YAW_RIGHT),
 	})
