@@ -128,58 +128,58 @@ end
 local _, throttleBar, throttleValue = makeGauge("THROTTLE", UDim2.new(0, 16, 0, 14), 168, ACCENT)
 local fuelCaption, fuelBar, fuelValue = makeGauge("FUEL", UDim2.new(0, 16, 0, 56), 168, GREEN)
 
--- Artificial horizon. A small disc whose contents roll and slide with the
--- aircraft, which is the quickest way to see that you are inverted.
+-- Artificial horizon.
 --
--- This has to be a CanvasGroup, not a Frame. ClipsDescendants does not clip a
--- descendant that has a non-zero Rotation, so the moment the aircraft banked,
--- the oversized sky panel stopped being contained and painted itself across the
--- screen. A CanvasGroup composites its children into a buffer its own size, so
--- rotation is clipped like everything else.
-local horizonHolder = Instance.new("CanvasGroup")
+-- Built as a ViewportFrame looking at a real ground plane, rather than as two
+-- coloured Frames that get rotated. Rotating flat UI does not work here: a
+-- rotated GuiObject is not clipped by its parent -- not by ClipsDescendants and
+-- not by a CanvasGroup either -- so the oversized sky panel stayed neatly inside
+-- its circle while level and painted itself across the screen the instant the
+-- aircraft banked.
+--
+-- A ViewportFrame renders a 3D scene and is always clipped to its own
+-- rectangle, so there is nothing to escape. It is also simply a better horizon:
+-- rolling and pitching a camera is what an attitude indicator actually is, and
+-- it stays correct past vertical and upside down for free.
+local horizonHolder = Instance.new("ViewportFrame")
 horizonHolder.Size = UDim2.new(0, 80, 0, 80)
 horizonHolder.Position = UDim2.new(0, 196, 0, 14)
-horizonHolder.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
+horizonHolder.BackgroundColor3 = Color3.fromRGB(64, 118, 176) -- the sky itself
+horizonHolder.BackgroundTransparency = 0
 horizonHolder.BorderSizePixel = 0
-horizonHolder.ClipsDescendants = true
+horizonHolder.Ambient = Color3.fromRGB(255, 255, 255)
+horizonHolder.LightColor = Color3.fromRGB(255, 255, 255)
 horizonHolder.Parent = panel
 
 local horizonCorner = Instance.new("UICorner")
 horizonCorner.CornerRadius = UDim.new(1, 0)
 horizonCorner.Parent = horizonHolder
 
-local sky = Instance.new("Frame")
-sky.Size = UDim2.new(2, 0, 2, 0)
-sky.AnchorPoint = Vector2.new(0.5, 0.5)
-sky.Position = UDim2.fromScale(0.5, 0.5)
-sky.BackgroundColor3 = Color3.fromRGB(64, 118, 176)
-sky.BorderSizePixel = 0
-sky.Parent = horizonHolder
+-- Ground: a very large slab with its top face exactly at y = 0. The camera sits
+-- at y = 0 too, so with the aircraft level the horizon lands dead centre.
+local groundSlab = Instance.new("Part")
+groundSlab.Size = Vector3.new(4000, 2, 4000)
+groundSlab.CFrame = CFrame.new(0, -1, 0)
+groundSlab.Color = Color3.fromRGB(112, 82, 52)
+groundSlab.Material = Enum.Material.SmoothPlastic
+groundSlab.Anchored = true
+groundSlab.Parent = horizonHolder
 
-local groundHalf = Instance.new("Frame")
-groundHalf.Size = UDim2.new(1, 0, 0.5, 0)
-groundHalf.Position = UDim2.fromScale(0, 0.5)
-groundHalf.BackgroundColor3 = Color3.fromRGB(112, 82, 52)
-groundHalf.BorderSizePixel = 0
-groundHalf.Parent = sky
+local horizonCamera = Instance.new("Camera")
+horizonCamera.FieldOfView = 80
+horizonCamera.Parent = horizonHolder
+horizonHolder.CurrentCamera = horizonCamera
 
-local horizonLine = Instance.new("Frame")
-horizonLine.Size = UDim2.new(1, 0, 0, 2)
-horizonLine.Position = UDim2.fromScale(0, 0.5)
-horizonLine.AnchorPoint = Vector2.new(0, 0.5)
-horizonLine.BackgroundColor3 = WHITE
-horizonLine.BorderSizePixel = 0
-horizonLine.Parent = sky
-
--- Fixed aircraft reference, so the horizon moves and this does not.
+-- Fixed aircraft reference, drawn over the viewport. Unrotated, so it is safe
+-- as flat UI.
 local reticle = Instance.new("Frame")
 reticle.Size = UDim2.new(0, 34, 0, 2)
 reticle.AnchorPoint = Vector2.new(0.5, 0.5)
-reticle.Position = UDim2.fromScale(0.5, 0.5)
+reticle.Position = UDim2.new(0, 236, 0, 54)
 reticle.BackgroundColor3 = ACCENT
 reticle.BorderSizePixel = 0
 reticle.ZIndex = 3
-reticle.Parent = horizonHolder
+reticle.Parent = panel
 
 local function makeReadout(order: number): TextLabel
 	local label = Instance.new("TextLabel")
@@ -437,9 +437,10 @@ RunService.Heartbeat:Connect(function(dt)
 		number("Heading")
 	)
 
-	-- Horizon: roll the disc against the bank angle, slide it against pitch.
-	sky.Rotation = -bank
-	sky.Position = UDim2.new(0.5, 0, 0.5, math.clamp(pitch, -90, 90) * 0.55)
+	-- Horizon: point the little camera the way the aeroplane is pointing, minus
+	-- the heading. Rx(pitch) * Rz(bank) is the attitude with yaw dropped, which
+	-- is exactly what an attitude indicator shows.
+	horizonCamera.CFrame = CFrame.Angles(math.rad(pitch), 0, math.rad(bank))
 
 	----------------------------------------------------------------------------
 	-- Warnings, in priority order, flashing so they cannot be tuned out

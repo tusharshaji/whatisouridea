@@ -220,12 +220,14 @@ and refused all descent. Anything asking "is it airborne" must raycast.
 **Gate parts must keep `CanQuery = false`.** A queryable gate registers as solid
 rock in the crash sweep and as ground in the altitude probe.
 
-**`ClipsDescendants` does not clip a rotated descendant.** The artificial horizon
-is a `CanvasGroup` for exactly this reason: as a plain Frame it contained its
-oversized sky panel perfectly until the aircraft banked, at which point rotation
-switched clipping off and it painted across the screen. A CanvasGroup composites
-its children into a buffer its own size, so rotation is clipped like anything
-else. Any rotating UI needs the same treatment.
+**A rotated GuiObject is not clipped by its parent.** Not by `ClipsDescendants`,
+and not by a `CanvasGroup` either -- both were tried. The artificial horizon used
+to be two coloured Frames rotated against each other, and it sat neatly inside
+its circle while level and painted itself across the screen the instant the
+aircraft banked. It is a `ViewportFrame` looking at a real ground plane now,
+which is always clipped to its own rectangle and has nothing to escape. If you
+need rotating UI, rotate a camera in a ViewportFrame rather than rotating flat
+UI inside a container.
 
 **Panels that list things use `AutomaticSize`.** Fixed heights were smaller than
 the content and the last few rows rendered outside the background.
