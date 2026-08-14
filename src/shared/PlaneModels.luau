@@ -12,7 +12,13 @@
 --
 -- Named parts the controller looks for, all optional except Fuselage:
 --   Fuselage    the root everything welds to
---   RotorHub    spun by a HingeConstraint; propeller aircraft only
+--   RotorHub    spun by a HingeConstraint; propeller aircraft only. It MUST be
+--               turned 90 degrees about Y. A hinge spins about its attachments'
+--               X axis and the attachments inherit the hub's orientation, so a
+--               hub left unrotated gives a propeller that tumbles end over end
+--               about a sideways axis instead of spinning. The same rotation
+--               also points the cylinder down the nose, which is where a
+--               propeller boss belongs.
 --   AileronL/R, Elevator, Rudder   hinged control surfaces
 --   Thruster    marks a jet exhaust; gets fire and a glow
 
@@ -85,7 +91,7 @@ local function trainer(body: Color3): ModelSpec
 			part("GearL", Vector3.new(1.6, 2.2, 2.2), CFrame.new(-3.4, -2.6, -4), TYRE, nil, Enum.PartType.Cylinder),
 			part("GearR", Vector3.new(1.6, 2.2, 2.2), CFrame.new(3.4, -2.6, -4), TYRE, nil, Enum.PartType.Cylinder),
 			part("GearTail", Vector3.new(1, 1.2, 1.2), CFrame.new(0, -1.6, 12), TYRE, nil, Enum.PartType.Cylinder),
-			part("RotorHub", Vector3.new(1.4, 1.4, 1.2), CFrame.new(0, 0, -12.4), DARK, nil, Enum.PartType.Cylinder),
+			part("RotorHub", Vector3.new(1.4, 1.4, 1.2), CFrame.new(0, 0, -12.4) * CFrame.Angles(0, math.rad(90), 0), DARK, nil, Enum.PartType.Cylinder),
 			part("RotorBladeA", Vector3.new(0.4, 15, 1.4), CFrame.new(0, 0, -12.9), DARK),
 			part("RotorBladeB", Vector3.new(15, 0.4, 1.4), CFrame.new(0, 0, -12.9), DARK),
 		},
@@ -118,7 +124,7 @@ local function sport(body: Color3): ModelSpec
 			part("GearL", Vector3.new(1.3, 1.8, 1.8), CFrame.new(-3, -2.6, -3), TYRE, nil, Enum.PartType.Cylinder),
 			part("GearR", Vector3.new(1.3, 1.8, 1.8), CFrame.new(3, -2.6, -3), TYRE, nil, Enum.PartType.Cylinder),
 			part("GearTail", Vector3.new(0.9, 1.1, 1.1), CFrame.new(0, -1.6, 11), TYRE, nil, Enum.PartType.Cylinder),
-			part("RotorHub", Vector3.new(1.2, 1.2, 1), CFrame.new(0, -0.2, -13.4), DARK, nil, Enum.PartType.Cylinder),
+			part("RotorHub", Vector3.new(1.2, 1.2, 1), CFrame.new(0, -0.2, -13.4) * CFrame.Angles(0, math.rad(90), 0), DARK, nil, Enum.PartType.Cylinder),
 			part("RotorBladeA", Vector3.new(0.4, 12, 1.1), CFrame.new(0, -0.2, -13.8), DARK),
 			part("RotorBladeB", Vector3.new(12, 0.4, 1.1), CFrame.new(0, -0.2, -13.8), DARK),
 		},

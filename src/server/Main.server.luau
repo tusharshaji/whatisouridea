@@ -393,14 +393,27 @@ inputRemote.OnServerEvent:Connect(function(player, payload)
 		pilot.lastReset = now
 		pilot.controller:reset()
 
-		-- Put the pilot back on the ground at the runway too. Sitting them in
-		-- the rebuilt aircraft normally does this by itself, but not if they
-		-- had climbed out or were mid-respawn.
-		local character = player.Character
-		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
-		if root and pilot.controller.spawnCFrame then
-			root.CFrame = pilot.controller.spawnCFrame * CFrame.new(0, 6, 0)
-		end
+		-- Rebuilding re-seats the pilot, which is itself the trip back to the
+		-- runway. Only move the character by hand if that did not take -- they
+		-- were dead, or on foot somewhere. Writing to HumanoidRootPart while
+		-- seated drags them straight back out of the seat again, which is what
+		-- made R look like it did nothing at all.
+		task.delay(0.5, function()
+			local controller = pilot.controller
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if not humanoid or not controller.seat then
+				return
+			end
+			if controller.seat.Occupant == humanoid then
+				return
+			end
+
+			local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if root and controller.spawnCFrame then
+				root.CFrame = controller.spawnCFrame * CFrame.new(0, 8, 0)
+			end
+		end)
 		return
 	end
 

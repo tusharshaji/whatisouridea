@@ -402,19 +402,39 @@ function PlaneController:claimOwnership()
 	end
 end
 
+-- Put the pilot in the cockpit, and keep trying for a moment.
+--
+-- One attempt is not enough. After a crash the pilot is dead, and the aeroplane
+-- is rebuilt before the character has finished respawning, so the single Sit
+-- call landed on a corpse and the pilot spent the rest of the run standing on
+-- the runway watching an empty aircraft. Retrying spans the gap without needing
+-- the respawn and the rebuild to be timed against each other.
 function PlaneController:seatPilot()
-	local character = self.player.Character
-	if not character or not self.seat then
-		return
-	end
+	self.seatToken = (self.seatToken or 0) + 1
+	local token = self.seatToken
 
-	local humanoid = character:FindFirstChildOfClass("Humanoid")
-	if humanoid and humanoid.Health > 0 then
-		self.seat:Sit(humanoid)
-		task.defer(function()
-			self:claimOwnership()
-		end)
-	end
+	task.spawn(function()
+		for _ = 1, 25 do
+			-- A newer attempt, or a newer aeroplane, cancels this one.
+			if self.seatToken ~= token or not self.model or not self.model.Parent then
+				return
+			end
+
+			local seat = self.seat
+			local character = self.player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+
+			if seat and humanoid and humanoid.Health > 0 and character.PrimaryPart then
+				if seat.Occupant == humanoid then
+					self:claimOwnership()
+					return
+				end
+				seat:Sit(humanoid)
+			end
+
+			task.wait(0.2)
+		end
+	end)
 end
 
 function PlaneController:groundHeightAt(position: Vector3): number?
