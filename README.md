@@ -55,15 +55,37 @@ You are seated in your own aircraft automatically when you join.
 | Key | Action |
 | --- | --- |
 | `W` / `S` | Throttle up / down |
-| `Up` / `Down` | Climb / descend |
-| `A` / `D` | Bank and turn |
+| `Up` / `Down` | Pitch, with no limit -- hold it and you loop |
+| `A` / `D` | Roll, with no limit -- hold it and you barrel roll |
 | `Q` / `E` | Rudder |
-| `R` | Restart the run |
-| `B` | Hangar |
+| `R` | Restart the run, back at the runway |
+| `B` | Hangar (only at the runway) |
 
-Hold `W`; once the panel reads `READY - PULL UP`, pull back. Watch `AGL` rather
-than `ALT` -- `ALT` is height above sea level and says nothing about the mountain
+Hold `W`; once the centre bar reads `ROTATE`, pull back. Watch `AGL` rather than
+`ALT` -- `ALT` is height above sea level and says nothing about the mountain
 immediately below you.
+
+Fuel burns with throttle. Run dry and the engine quits: you keep the controls
+but you are gliding, sinking, and usually about to become scenery.
+
+## The flight model
+
+It is a full-attitude model. The aircraft carries an orientation, the controls
+rotate it about its own axes, and velocity runs along wherever the nose ends up
+pointing. Loops, rolls and inverted flight all fall out of that for free.
+
+This replaced a model that kept heading, bank and climb rate as three separate
+numbers. That one was beautifully stable and fundamentally incapable of being
+upside down -- with bank as a scalar clamped to 45 degrees and height as a climb
+rate rather than a direction, there was nowhere for a loop to live, which is why
+pitch had to be clamped to a shallow cone.
+
+What it costs is the old guarantee that a turn never lost altitude and that the
+aircraft could never be pointed at the ground. Both were load-bearing for
+"forgiving" and both had to go. What keeps it flyable is a weak auto-level that
+gives up past 100 degrees of bank, so it settles you when you are nearly upright
+and never fights you when you are deliberately inverted. How strong that is
+varies per aircraft: the Trainer wants to fly level, the Delta does not care.
 
 ## The course
 
@@ -71,10 +93,13 @@ Fly through the lit gate. An arrow at the edge of the screen points at it when i
 is off to the side or behind you.
 
 Gates are worth more the smaller they are, more again for a centred pass, and
-every consecutive gate raises a combo multiplier up to 5x. **Crashing costs the
-whole run**: the airframe comes apart and you restart from the runway at gate
-one. `R` does the same thing deliberately -- as a free reset it would just be an
-escape hatch from every crash about to happen.
+every consecutive gate raises a combo multiplier up to 5x. A gate fades out
+behind you once flown.
+
+**Crashing costs the whole run, and kills you.** The airframe comes apart, the
+pilot goes with it, and you restart from the runway at gate one. `R` does the
+same thing deliberately -- as a free reset it would just be an escape hatch from
+every crash about to happen.
 
 Two currencies, because a crash should cost a run and not an evening:
 
@@ -85,17 +110,26 @@ Two currencies, because a crash should cost a run and not an evening:
 
 ## The hangar
 
-`B` opens it. Four aircraft and three upgrade tracks, all defined in
-`UpgradeConfig.luau` -- the same table the server validates purchases against, so
-what is on the button is what gets charged. Upgrades multiply `PlaneConfig`
-values per pilot:
+`B` opens it, **and only at the runway** -- fly off and it shows you the door.
+The server enforces that too, not just the UI.
+
+Four aircraft, each an actual different model rather than a recolour: the
+Trainer is a high-wing propeller thing, the Sport a low-wing racer, the Jet has
+swept wings and twin exhausts with fire, the Delta is a three-engined dart. They
+are defined as part specs in `PlaneModels.luau` and built at runtime.
+
+Four upgrade tracks, all in `UpgradeConfig.luau` -- the same table the server
+validates purchases against, so what is on the button is what gets charged:
 
 - **Engine** -> top speed
-- **Wings** -> turn rate and roll rate
-- **Lift** -> climb and dive rate
+- **Wings** -> roll and yaw rate
+- **Lift** -> pitch rate, so really how hard it pulls
+- **Fuel Tank** -> how long you can stay up
 
-Nothing bought touches the crash rules or gate sizes, so a fully upgraded Delta
-is faster and sharper but still has to be flown through the same rock.
+Buying an aircraft rebuilds it and restarts the run. Buying an upgrade applies
+immediately and tops up your tank. Nothing bought touches the crash rules or the
+gate sizes, so a fully upgraded Delta is faster and sharper but still has to be
+flown through the same rock.
 
 > Purchases last for the session only. There is no DataStore yet, so a server
 > restart resets everyone's bank.
@@ -143,9 +177,11 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `src/client/RingHud.client.luau` | Score, gate marker, and drawing your rings |
 | `src/client/ShopUi.client.luau` | The hangar |
 | `src/shared/PlaneConfig.luau` | Every handling value |
+| `src/shared/PlaneModels.luau` | What each aircraft is made of |
 | `src/shared/RingConfig.luau` | Every course and scoring value |
 | `src/shared/UpgradeConfig.luau` | Aircraft, upgrades, prices |
 | `src/shared/Ensure.luau` | Get-or-create, instead of waiting forever |
+| `tools/MeasureMap.luau` | Measures your island. Not part of the game. |
 
 ### Things that are easy to break
 

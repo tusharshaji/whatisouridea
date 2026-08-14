@@ -1,15 +1,20 @@
 --!strict
 
--- Pilot input and instruments.
+-- Input, and the cockpit.
 --
--- Input is sampled every frame and sent at a fixed rate; the server owns the
--- flight model and only ever receives axis values. Readouts come back as
--- attributes on the local player, which is how each pilot sees their own
--- aircraft rather than whichever one happened to be in the world first.
+-- Readouts are attributes on the local player, so each pilot sees their own
+-- aircraft. Input is sampled every frame and sent at a fixed rate; the server
+-- owns the flight model and only ever receives axis values.
+--
+-- The panel is laid out like an instrument cluster rather than a list of
+-- numbers: throttle and fuel are bars because a bar can be read at a glance
+-- while you are busy flying, and an artificial horizon is there because with
+-- full aerobatics you can genuinely lose track of which way up you are.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
@@ -23,69 +28,310 @@ local inputRemote = remotes:WaitForChild("PlaneInput") :: RemoteEvent
 
 local ACCENT = Color3.fromRGB(255, 132, 48)
 local WHITE = Color3.fromRGB(235, 235, 240)
+local DIM = Color3.fromRGB(140, 140, 152)
 local GREEN = Color3.fromRGB(120, 230, 140)
 local RED = Color3.fromRGB(240, 96, 96)
 local WARN = Color3.fromRGB(255, 200, 90)
+local GLASS = Color3.fromRGB(10, 12, 16)
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "PlaneHud"
 screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
+local function number(name: string): number
+	local value = player:GetAttribute(name)
+	return if type(value) == "number" then value else 0
+end
+
+--------------------------------------------------------------------------------
+-- Instrument cluster, bottom left
+--------------------------------------------------------------------------------
+
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 240, 0, 231)
-panel.Position = UDim2.new(0, 20, 1, -251)
-panel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-panel.BackgroundTransparency = 0.35
+panel.Name = "Cluster"
+panel.Size = UDim2.new(0, 292, 0, 196)
+panel.Position = UDim2.new(0, 24, 1, -220)
+panel.BackgroundColor3 = GLASS
+panel.BackgroundTransparency = 0.2
 panel.BorderSizePixel = 0
 panel.Visible = false
 panel.Parent = screenGui
 
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(0, 8)
-corner.Parent = panel
+local panelCorner = Instance.new("UICorner")
+panelCorner.CornerRadius = UDim.new(0, 10)
+panelCorner.Parent = panel
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 2)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = panel
+local panelStroke = Instance.new("UIStroke")
+panelStroke.Color = Color3.fromRGB(60, 66, 78)
+panelStroke.Thickness = 1
+panelStroke.Parent = panel
 
-local padding = Instance.new("UIPadding")
-padding.PaddingTop = UDim.new(0, 10)
-padding.PaddingLeft = UDim.new(0, 12)
-padding.PaddingRight = UDim.new(0, 12)
-padding.Parent = panel
+-- A labelled horizontal bar: the readable version of a row of hashes.
+local function makeGauge(
+	label: string,
+	position: UDim2,
+	width: number,
+	fill: Color3
+): (TextLabel, Frame, TextLabel)
+	local holder = Instance.new("Frame")
+	holder.Size = UDim2.new(0, width, 0, 34)
+	holder.Position = position
+	holder.BackgroundTransparency = 1
+	holder.Parent = panel
 
-local function addRow(order: number, size: number, color: Color3): TextLabel
+	local caption = Instance.new("TextLabel")
+	caption.Size = UDim2.new(1, 0, 0, 13)
+	caption.BackgroundTransparency = 1
+	caption.Font = Enum.Font.Code
+	caption.TextSize = 11
+	caption.TextColor3 = DIM
+	caption.TextXAlignment = Enum.TextXAlignment.Left
+	caption.Text = label
+	caption.Parent = holder
+
+	local value = Instance.new("TextLabel")
+	value.Size = UDim2.new(1, 0, 0, 13)
+	value.BackgroundTransparency = 1
+	value.Font = Enum.Font.Code
+	value.TextSize = 11
+	value.TextColor3 = WHITE
+	value.TextXAlignment = Enum.TextXAlignment.Right
+	value.Text = ""
+	value.Parent = holder
+
+	local track = Instance.new("Frame")
+	track.Size = UDim2.new(1, 0, 0, 12)
+	track.Position = UDim2.new(0, 0, 0, 17)
+	track.BackgroundColor3 = Color3.fromRGB(38, 40, 48)
+	track.BorderSizePixel = 0
+	track.Parent = holder
+
+	local trackCorner = Instance.new("UICorner")
+	trackCorner.CornerRadius = UDim.new(0, 3)
+	trackCorner.Parent = track
+
+	local bar = Instance.new("Frame")
+	bar.Size = UDim2.new(0, 0, 1, 0)
+	bar.BackgroundColor3 = fill
+	bar.BorderSizePixel = 0
+	bar.Parent = track
+
+	local barCorner = Instance.new("UICorner")
+	barCorner.CornerRadius = UDim.new(0, 3)
+	barCorner.Parent = bar
+
+	return caption, bar, value
+end
+
+local _, throttleBar, throttleValue = makeGauge("THROTTLE", UDim2.new(0, 16, 0, 14), 168, ACCENT)
+local fuelCaption, fuelBar, fuelValue = makeGauge("FUEL", UDim2.new(0, 16, 0, 56), 168, GREEN)
+
+-- Artificial horizon. A small disc whose contents roll and slide with the
+-- aircraft, which is the quickest way to see that you are inverted.
+local horizonHolder = Instance.new("Frame")
+horizonHolder.Size = UDim2.new(0, 80, 0, 80)
+horizonHolder.Position = UDim2.new(0, 196, 0, 14)
+horizonHolder.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
+horizonHolder.BorderSizePixel = 0
+horizonHolder.ClipsDescendants = true
+horizonHolder.Parent = panel
+
+local horizonCorner = Instance.new("UICorner")
+horizonCorner.CornerRadius = UDim.new(1, 0)
+horizonCorner.Parent = horizonHolder
+
+local sky = Instance.new("Frame")
+sky.Size = UDim2.new(2, 0, 2, 0)
+sky.AnchorPoint = Vector2.new(0.5, 0.5)
+sky.Position = UDim2.fromScale(0.5, 0.5)
+sky.BackgroundColor3 = Color3.fromRGB(64, 118, 176)
+sky.BorderSizePixel = 0
+sky.Parent = horizonHolder
+
+local groundHalf = Instance.new("Frame")
+groundHalf.Size = UDim2.new(1, 0, 0.5, 0)
+groundHalf.Position = UDim2.fromScale(0, 0.5)
+groundHalf.BackgroundColor3 = Color3.fromRGB(112, 82, 52)
+groundHalf.BorderSizePixel = 0
+groundHalf.Parent = sky
+
+local horizonLine = Instance.new("Frame")
+horizonLine.Size = UDim2.new(1, 0, 0, 2)
+horizonLine.Position = UDim2.fromScale(0, 0.5)
+horizonLine.AnchorPoint = Vector2.new(0, 0.5)
+horizonLine.BackgroundColor3 = WHITE
+horizonLine.BorderSizePixel = 0
+horizonLine.Parent = sky
+
+-- Fixed aircraft reference, so the horizon moves and this does not.
+local reticle = Instance.new("Frame")
+reticle.Size = UDim2.new(0, 34, 0, 2)
+reticle.AnchorPoint = Vector2.new(0.5, 0.5)
+reticle.Position = UDim2.fromScale(0.5, 0.5)
+reticle.BackgroundColor3 = ACCENT
+reticle.BorderSizePixel = 0
+reticle.ZIndex = 3
+reticle.Parent = horizonHolder
+
+local function makeReadout(order: number): TextLabel
 	local label = Instance.new("TextLabel")
-	label.Size = UDim2.new(1, 0, 0, size + 6)
+	label.Size = UDim2.new(0, 128, 0, 16)
+	label.Position = UDim2.new(0, 16, 0, 100 + order * 17)
 	label.BackgroundTransparency = 1
-	label.TextColor3 = color
-	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Font = Enum.Font.Code
-	label.TextSize = size
+	label.TextSize = 13
+	label.TextColor3 = WHITE
+	label.TextXAlignment = Enum.TextXAlignment.Left
 	label.Text = ""
-	label.LayoutOrder = order
 	label.Parent = panel
 	return label
 end
 
-local title = addRow(1, 16, ACCENT)
-title.Text = "FLIGHT"
+local speedRow = makeReadout(0)
+local altitudeRow = makeReadout(1)
+local aglRow = makeReadout(2)
 
-local throttleRow = addRow(2, 15, WHITE)
-local speedRow = addRow(3, 15, WHITE)
-local altitudeRow = addRow(4, 15, WHITE)
-local aglRow = addRow(5, 15, WHITE)
-local climbRow = addRow(6, 15, WHITE)
-local bankRow = addRow(7, 15, WHITE)
-local headingRow = addRow(8, 15, WHITE)
-local statusRow = addRow(9, 15, GREEN)
+local attitudeRow = Instance.new("TextLabel")
+attitudeRow.Size = UDim2.new(0, 130, 0, 50)
+attitudeRow.Position = UDim2.new(0, 152, 0, 102)
+attitudeRow.BackgroundTransparency = 1
+attitudeRow.Font = Enum.Font.Code
+attitudeRow.TextSize = 13
+attitudeRow.TextColor3 = DIM
+attitudeRow.TextXAlignment = Enum.TextXAlignment.Left
+attitudeRow.TextYAlignment = Enum.TextYAlignment.Top
+attitudeRow.Text = ""
+attitudeRow.Parent = panel
 
-local hint = addRow(10, 12, Color3.fromRGB(160, 160, 170))
-hint.Size = UDim2.new(1, 0, 0, 42)
-hint.TextWrapped = true
-hint.Text = "W/S throttle  -  arrows climb/dive\nA/D turn  -  Q/E rudder  -  R restart  -  B shop"
+--------------------------------------------------------------------------------
+-- Centre warning bar. Deliberately in the way.
+--------------------------------------------------------------------------------
+
+local alertBar = Instance.new("Frame")
+alertBar.Name = "Alert"
+alertBar.Size = UDim2.new(0, 460, 0, 46)
+alertBar.AnchorPoint = Vector2.new(0.5, 0.5)
+alertBar.Position = UDim2.fromScale(0.5, 0.2)
+alertBar.BackgroundColor3 = RED
+alertBar.BackgroundTransparency = 0.15
+alertBar.BorderSizePixel = 0
+alertBar.Visible = false
+alertBar.Parent = screenGui
+
+local alertCorner = Instance.new("UICorner")
+alertCorner.CornerRadius = UDim.new(0, 6)
+alertCorner.Parent = alertBar
+
+local alertText = Instance.new("TextLabel")
+alertText.Size = UDim2.fromScale(1, 1)
+alertText.BackgroundTransparency = 1
+alertText.Font = Enum.Font.GothamBold
+alertText.TextSize = 22
+alertText.TextColor3 = Color3.fromRGB(20, 18, 18)
+alertText.Text = ""
+alertText.Parent = alertBar
+
+--------------------------------------------------------------------------------
+-- Settings, right edge
+--------------------------------------------------------------------------------
+
+local settingsButton = Instance.new("TextButton")
+settingsButton.Size = UDim2.new(0, 44, 0, 44)
+settingsButton.Position = UDim2.new(1, -68, 0, 150)
+settingsButton.BackgroundColor3 = GLASS
+settingsButton.BackgroundTransparency = 0.2
+settingsButton.BorderSizePixel = 0
+settingsButton.Font = Enum.Font.GothamBold
+settingsButton.TextSize = 20
+settingsButton.TextColor3 = WHITE
+settingsButton.Text = "?"
+settingsButton.AutoButtonColor = true
+settingsButton.Parent = screenGui
+
+local settingsCorner = Instance.new("UICorner")
+settingsCorner.CornerRadius = UDim.new(0, 8)
+settingsCorner.Parent = settingsButton
+
+local settingsStroke = Instance.new("UIStroke")
+settingsStroke.Color = Color3.fromRGB(60, 66, 78)
+settingsStroke.Parent = settingsButton
+
+local settingsPanel = Instance.new("Frame")
+settingsPanel.Size = UDim2.new(0, 290, 0, 268)
+settingsPanel.Position = UDim2.new(1, -324, 0, 150)
+settingsPanel.BackgroundColor3 = GLASS
+settingsPanel.BackgroundTransparency = 0.08
+settingsPanel.BorderSizePixel = 0
+settingsPanel.Visible = false
+settingsPanel.Parent = screenGui
+
+local settingsPanelCorner = Instance.new("UICorner")
+settingsPanelCorner.CornerRadius = UDim.new(0, 10)
+settingsPanelCorner.Parent = settingsPanel
+
+local settingsPanelStroke = Instance.new("UIStroke")
+settingsPanelStroke.Color = Color3.fromRGB(60, 66, 78)
+settingsPanelStroke.Parent = settingsPanel
+
+local settingsPadding = Instance.new("UIPadding")
+settingsPadding.PaddingTop = UDim.new(0, 14)
+settingsPadding.PaddingLeft = UDim.new(0, 16)
+settingsPadding.PaddingRight = UDim.new(0, 16)
+settingsPadding.Parent = settingsPanel
+
+local settingsList = Instance.new("UIListLayout")
+settingsList.Padding = UDim.new(0, 4)
+settingsList.SortOrder = Enum.SortOrder.LayoutOrder
+settingsList.Parent = settingsPanel
+
+local function settingsRow(order: number, text: string, color: Color3, size: number)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, size + 6)
+	label.BackgroundTransparency = 1
+	label.Font = Enum.Font.Code
+	label.TextSize = size
+	label.TextColor3 = color
+	label.TextXAlignment = Enum.TextXAlignment.Left
+	label.Text = text
+	label.LayoutOrder = order
+	label.Parent = settingsPanel
+end
+
+settingsRow(1, "CONTROLS", ACCENT, 16)
+settingsRow(2, "W / S        throttle", WHITE, 14)
+settingsRow(3, "UP / DOWN    pitch, no limit", WHITE, 14)
+settingsRow(4, "A / D        roll, no limit", WHITE, 14)
+settingsRow(5, "Q / E        rudder", WHITE, 14)
+settingsRow(6, "R            restart run", WHITE, 14)
+settingsRow(7, "B            hangar (at runway)", WHITE, 14)
+settingsRow(8, "", DIM, 8)
+settingsRow(9, "Hold UP through the vertical and", DIM, 12)
+settingsRow(10, "the aircraft will loop. Wings level", DIM, 12)
+settingsRow(11, "themselves only while upright, so", DIM, 12)
+settingsRow(12, "inverted flight holds.", DIM, 12)
+settingsRow(13, "", DIM, 8)
+settingsRow(14, "Watch AGL, not ALT. Fuel burns", DIM, 12)
+settingsRow(15, "with throttle; empty means glide.", DIM, 12)
+
+settingsButton.Activated:Connect(function()
+	local opening = not settingsPanel.Visible
+	settingsPanel.Visible = opening
+
+	if opening then
+		settingsPanel.Position = UDim2.new(1, -300, 0, 150)
+		TweenService:Create(
+			settingsPanel,
+			TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+			{ Position = UDim2.new(1, -324, 0, 150) }
+		):Play()
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- Input
+--------------------------------------------------------------------------------
 
 local KEY_THROTTLE_UP = Enum.KeyCode.W
 local KEY_THROTTLE_DOWN = Enum.KeyCode.S
@@ -107,23 +353,12 @@ local function axis(negative: Enum.KeyCode, positive: Enum.KeyCode): number
 	return value
 end
 
--- This pilot's own aircraft, which the server names after their user id.
 local function ownPlane(): Model?
 	local folder = Workspace:FindFirstChild("Planes")
 	if not folder then
 		return nil
 	end
 	return folder:FindFirstChild(`Plane_{player.UserId}`) :: Model?
-end
-
-local function bar(fraction: number): string
-	local filled = math.floor(math.clamp(fraction, 0, 1) * 10 + 0.5)
-	return string.rep("#", filled) .. string.rep(".", 10 - filled)
-end
-
-local function number(name: string): number
-	local value = player:GetAttribute(name)
-	return if type(value) == "number" then value else 0
 end
 
 UserInputService.InputBegan:Connect(function(input, processed)
@@ -135,45 +370,95 @@ UserInputService.InputBegan:Connect(function(input, processed)
 	end
 end)
 
+--------------------------------------------------------------------------------
+-- Per frame
+--------------------------------------------------------------------------------
+
+local flashClock = 0
 local sinceSend = 0
 
 RunService.Heartbeat:Connect(function(dt)
 	local plane = ownPlane()
 	panel.Visible = plane ~= nil
+	settingsButton.Visible = plane ~= nil
 	if not plane then
+		alertBar.Visible = false
 		return
 	end
 
+	local throttle = number("Throttle")
+	local fuel = number("Fuel")
+	local capacity = math.max(number("FuelCapacity"), 1)
+	local fuelFraction = math.clamp(fuel / capacity, 0, 1)
 	local agl = number("HeightAboveGround")
+	local speed = number("Airspeed")
+	local grounded = player:GetAttribute("Grounded") == true
+	local engineOut = player:GetAttribute("EngineOut") == true
+	local crashed = player:GetAttribute("Crashed") == true
 
-	throttleRow.Text = string.format("THR  %s %3d%%", bar(number("Throttle")), number("Throttle") * 100)
-	speedRow.Text = string.format("SPD  %6.0f studs/s", number("Airspeed"))
-	altitudeRow.Text = string.format("ALT  %6.0f studs", number("Altitude"))
-	-- Over terrain this is the number that keeps you alive; ALT alone says
-	-- nothing about the mountain immediately below.
-	aglRow.Text = string.format("AGL  %6.0f studs", agl)
-	climbRow.Text = string.format("VS   %+6.0f studs/s", number("ClimbRate"))
-	bankRow.Text = string.format("BNK  %+6.0f deg", number("Bank"))
-	headingRow.Text = string.format("HDG  %6.0f deg", number("Heading"))
+	throttleBar.Size = UDim2.new(math.clamp(throttle, 0, 1), 0, 1, 0)
+	throttleValue.Text = string.format("%d%%", throttle * 100)
 
-	if player:GetAttribute("Crashed") then
-		statusRow.TextColor3 = RED
-		statusRow.Text = "CRASHED - RUN LOST"
-	elseif not player:GetAttribute("Grounded") then
-		if agl < 60 then
-			statusRow.TextColor3 = WARN
-			statusRow.Text = "LOW - PULL UP"
-		else
-			statusRow.Text = ""
-		end
-	elseif number("Airspeed") >= Config.TakeoffSpeed then
-		statusRow.TextColor3 = GREEN
-		statusRow.Text = "READY - PULL UP"
-	else
-		statusRow.TextColor3 = GREEN
-		statusRow.Text = "ON RUNWAY - HOLD W"
+	fuelBar.Size = UDim2.new(fuelFraction, 0, 1, 0)
+	fuelValue.Text = string.format("%d%%", fuelFraction * 100)
+	fuelBar.BackgroundColor3 = if fuelFraction <= 0.001
+		then RED
+		elseif fuelFraction < Config.FuelWarnFraction then WARN
+		else GREEN
+	fuelCaption.TextColor3 = if fuelFraction < Config.FuelWarnFraction then WARN else DIM
+
+	speedRow.Text = string.format("SPD %5.0f", speed)
+	altitudeRow.Text = string.format("ALT %5.0f", number("Altitude"))
+	aglRow.Text = string.format("AGL %5.0f", agl)
+	aglRow.TextColor3 = if agl < 60 and not grounded then WARN else WHITE
+
+	local bank = number("Bank")
+	local pitch = number("Pitch")
+	attitudeRow.Text = string.format(
+		"PITCH %+4.0f\nBANK  %+4.0f\nHDG    %3.0f",
+		pitch,
+		bank,
+		number("Heading")
+	)
+
+	-- Horizon: roll the disc against the bank angle, slide it against pitch.
+	sky.Rotation = -bank
+	sky.Position = UDim2.new(0.5, 0, 0.5, math.clamp(pitch, -90, 90) * 0.55)
+
+	----------------------------------------------------------------------------
+	-- Warnings, in priority order, flashing so they cannot be tuned out
+	----------------------------------------------------------------------------
+	flashClock += dt
+	local flash = math.sin(flashClock * 9) > -0.2
+
+	local message, colour = nil :: string?, RED
+
+	if crashed then
+		message, colour = "CRASHED", RED
+	elseif engineOut then
+		message, colour = "ENGINE OUT  -  NO FUEL", RED
+	elseif fuelFraction < Config.FuelWarnFraction and not grounded then
+		message, colour = string.format("LOW FUEL  %d%%", fuelFraction * 100), WARN
+	elseif not grounded and agl < 60 then
+		message, colour = "TERRAIN  -  PULL UP", RED
+	elseif grounded and speed >= Config.TakeoffSpeed then
+		message, colour = "ROTATE", GREEN
+	elseif grounded and speed < Config.TakeoffSpeed then
+		message, colour = "HOLD W TO TAKE OFF", GREEN
 	end
 
+	if message then
+		alertBar.Visible = true
+		alertText.Text = message
+		alertBar.BackgroundColor3 = colour
+		-- Steady for the friendly ones, flashing for the ones that matter.
+		local urgent = colour ~= GREEN
+		alertBar.BackgroundTransparency = if urgent and not flash then 0.7 else 0.15
+	else
+		alertBar.Visible = false
+	end
+
+	----------------------------------------------------------------------------
 	sinceSend += dt
 	if sinceSend < SEND_RATE then
 		return

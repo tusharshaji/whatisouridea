@@ -2,23 +2,21 @@
 
 -- The server. One aircraft, one course and one scoreboard per pilot.
 --
--- Everything used to be global: one plane in the world, one set of rings, one
--- score. That made a second player a spectator who happened to also collect
--- everybody else's gates. Every piece of state here now hangs off a pilot record
--- instead, and the rings are not even instances -- each client draws its own
--- course from data sent only to it, so nobody can see or score anyone else's.
+-- Aircraft are built from specs in PlaneModels rather than cloned from an
+-- authored template, which is why there is no longer an Airplane model in the
+-- project file: a jet has to actually be shaped like a jet, and that cannot come
+-- from recolouring one shared airframe.
 --
--- Gate detection is a plane crossing rather than a Touched event. At 220
--- studs/sec the aircraft moves nearly four studs between frames and a gate is
--- three thick, so touching one is a coin flip. Testing which side of the gate's
--- plane it was on last frame and which side it is on now cannot be tunnelled,
--- and gives the accuracy figure for scoring in the same step.
+-- Gate detection is a plane crossing, not a Touched event. At several hundred
+-- studs a second the aircraft moves a long way between frames and a gate is
+-- three studs thick, so touching one is a coin flip. Testing which side of the
+-- gate's plane it was on last frame and which side it is on now cannot be
+-- tunnelled, and gives the accuracy figure for scoring in the same step.
 
 local PhysicsService = game:GetService("PhysicsService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local ServerStorage = game:GetService("ServerStorage")
 local Workspace = game:GetService("Workspace")
 
 local PlaneConfig = require(ReplicatedStorage.Shared.PlaneConfig)
@@ -31,28 +29,46 @@ local PlaneController = require(script.Parent.PlaneController)
 local TerrainSurvey = require(script.Parent.TerrainSurvey)
 
 local COLLISION_GROUP = "Planes"
-local TELEPORT_JUMP = 150
+
+-- Several gates can fall inside a single frame at speed, so detection runs a
+-- short loop rather than testing one gate and giving up.
+local MAX_GATES_PER_FRAME = 4
+
+Players.RespawnTime = 3
 
 --------------------------------------------------------------------------------
 -- World setup
 --------------------------------------------------------------------------------
 
--- The aeroplane is authored in Workspace so it can be seen and edited in Studio,
--- and becomes a template the moment the game runs. Every pilot flies a clone.
-local template = Workspace:WaitForChild("Airplane") :: Model
-local basePad = template:GetPivot()
-template.Parent = ServerStorage
-
 local planesFolder = Instance.new("Folder")
 planesFolder.Name = "Planes"
 planesFolder.Parent = Workspace
 
--- Aircraft do not collide with each other. Without this one pilot can swat
--- another off the course, and two planes sharing a runway slot explode.
 pcall(function()
 	PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
 end)
 PhysicsService:CollisionGroupSetCollidable(COLLISION_GROUP, COLLISION_GROUP, false)
+
+-- Start of the runway, pointing down it. Taken from the tarmac itself so moving
+-- the runway moves the aircraft with it.
+local function runwayPad(): CFrame
+	local runway = Workspace:FindFirstChild("Runway")
+	local tarmac = runway and runway:FindFirstChild("Tarmac") :: BasePart?
+
+	if not tarmac then
+		warn("[Main] no Runway.Tarmac found; spawning aircraft at the origin")
+		return CFrame.new(0, 5, 0)
+	end
+
+	-- The tarmac is longer than it is wide, so its length runs along local Z.
+	-- Park at the near end. No rotation: a CFrame's LookVector is its -Z, which
+	-- already points down the strip from here. Turning it 180 degrees would
+	-- line every aircraft up facing off the end of the runway.
+	local halfLength = tarmac.Size.Z / 2
+	return tarmac.CFrame * CFrame.new(0, tarmac.Size.Y / 2, halfLength - 30)
+end
+
+local basePad = runwayPad()
 
 local remotes = ensure(ReplicatedStorage, "Remotes", "Folder")
 local inputRemote = ensure(remotes, "PlaneInput", "RemoteEvent") :: RemoteEvent
@@ -60,10 +76,9 @@ local courseRemote = ensure(remotes, "CourseData", "RemoteEvent") :: RemoteEvent
 local eventRemote = ensure(remotes, "GameEvent", "RemoteEvent") :: RemoteEvent
 local buyRemote = ensure(remotes, "BuyUpgrade", "RemoteEvent") :: RemoteEvent
 
--- One filter for every raycast the game makes: no aircraft and no character
--- should ever read as terrain. The pilot's own character is welded into the seat
--- and sits directly in the path of the crash sweep, so without this an aeroplane
--- crashes into its own pilot the instant it leaves the ground.
+-- One filter for every raycast: no aircraft and no character should ever read as
+-- terrain. The pilot's own character is welded into the seat and sits directly
+-- in the path of the crash sweep.
 local probe = RaycastParams.new()
 probe.FilterType = Enum.RaycastFilterType.Exclude
 probe.IgnoreWater = false
@@ -90,12 +105,9 @@ local function groundAt(x: number, z: number): number?
 	return if hit then hit.Position.Y else nil
 end
 
--- Where to lay courses.
---
 -- A measured override wins outright. Terrain.MaxExtents sounds like the right
 -- source and is not: on a generated map it can report a region far larger than
--- anything built, so the survey spreads its samples across mostly nothing and
--- the course gets planned on a box that is not even centred on the island.
+-- anything built, so the survey spreads its samples across mostly nothing.
 local function mapBounds(): (number, number, number, number)
 	local override = RingConfig.MapOverride
 	if override then
@@ -105,9 +117,8 @@ local function mapBounds(): (number, number, number, number)
 	local extents = Workspace.Terrain.MaxExtents
 	local minX, maxX = extents.Min.X * 4, extents.Max.X * 4
 	local minZ, maxZ = extents.Min.Z * 4, extents.Max.Z * 4
-	local width = maxX - minX
 
-	if width < 512 or width > 60000 then
+	if (maxX - minX) < 512 or (maxX - minX) > 60000 then
 		warn("[Main] Terrain.MaxExtents is unusable and no MapOverride is set. "
 			.. "Measure the map with tools/MeasureMap.luau.")
 		local half = RingConfig.FallbackExtent / 2
@@ -172,23 +183,35 @@ local function claimSlot(): number
 	return slot
 end
 
--- Runway slots: three abreast, then further back down the tarmac. The runway is
--- 44 wide and 290 long, so this keeps a good few pilots on the concrete.
+-- Runway slots: three abreast, then further back down the tarmac.
 local function padForSlot(slot: number): CFrame
 	local across = (slot % 3 - 1) * 14
 	local along = -math.floor(slot / 3) * 52
 	return basePad * CFrame.new(across, 0, along)
 end
 
-local function publishStats(pilot: Pilot)
-	local stats = UpgradeConfig.statsFor(pilot.planeId, pilot.levels)
-	pilot.controller:applyStats(stats)
-
+local function publishAttributes(pilot: Pilot)
 	local player = pilot.player
 	player:SetAttribute("PlaneId", pilot.planeId)
 	for _, upgrade in UpgradeConfig.Upgrades do
 		player:SetAttribute("Level_" .. upgrade.id, pilot.levels[upgrade.id] or 0)
 	end
+end
+
+-- Stat-only change: no new airframe, so the aircraft keeps flying.
+local function refreshStats(pilot: Pilot)
+	pilot.controller:applyStats(UpgradeConfig.statsFor(pilot.planeId, pilot.levels))
+	publishAttributes(pilot)
+end
+
+-- Aircraft change: the model itself is different, so it has to be rebuilt.
+local function equipPlane(pilot: Pilot, planeId: string)
+	local def = UpgradeConfig.findPlane(planeId) or UpgradeConfig.Planes[1]
+	pilot.planeId = def.id
+	pilot.controller:setPlane(def.id, def.color)
+	pilot.controller:applyStats(UpgradeConfig.statsFor(def.id, pilot.levels))
+	pilot.controller:reset()
+	publishAttributes(pilot)
 end
 
 local function sendCourse(pilot: Pilot)
@@ -202,8 +225,6 @@ local function sendCourse(pilot: Pilot)
 end
 
 local function buildCourse(pilot: Pilot)
-	-- Courses are laid from the terrain survey, so a pilot who joins before it
-	-- has finished simply waits for it rather than getting a flat one.
 	while not survey do
 		task.wait(0.25)
 	end
@@ -227,7 +248,9 @@ local function buildCourse(pilot: Pilot)
 	)
 
 	pilot.activeIndex = 1
-	pilot.lastPosition = pilot.controller.fuselage.Position
+	if pilot.controller.fuselage then
+		pilot.lastPosition = pilot.controller.fuselage.Position
+	end
 	sendCourse(pilot)
 
 	print(`[Main] course for {pilot.player.Name}: {#pilot.gates} gates, lap {pilot.lap + 1}`)
@@ -252,7 +275,6 @@ local function addPilot(player: Player)
 	local slot = claimSlot()
 	local controller = PlaneController.new(
 		player,
-		template,
 		planesFolder,
 		padForSlot(slot),
 		probe,
@@ -282,7 +304,10 @@ local function addPilot(player: Player)
 	player:SetAttribute("Crashed", false)
 	player:SetAttribute("OwnedPlanes", "trainer")
 
-	publishStats(pilot)
+	-- Equip rather than just apply stats: this is what gives the aircraft its
+	-- colour and its actual shape, and the controller built a default one in
+	-- its constructor before any of that was known.
+	equipPlane(pilot, "trainer")
 
 	controller.onCrash = function()
 		eventRemote:FireClient(player, { kind = "crash" })
@@ -314,7 +339,6 @@ local function onPlayerAdded(player: Player)
 		refreshProbeFilter()
 		local pilot = pilots[player]
 		if pilot then
-			-- Put them back in the cockpit after a respawn on foot.
 			task.defer(function()
 				pilot.controller:seatPilot()
 			end)
@@ -332,8 +356,6 @@ Players.PlayerRemoving:Connect(function(player)
 	task.defer(refreshProbeFilter)
 end)
 
--- Anyone already here when the script starts, which in a Studio playtest is the
--- local player. They need the same CharacterAdded hook as a late joiner.
 for _, player in Players:GetPlayers() do
 	onPlayerAdded(player)
 end
@@ -359,12 +381,20 @@ inputRemote.OnServerEvent:Connect(function(player, payload)
 	end
 
 	if payload.reset == true then
-		-- Rate limited, and refused mid-crash: without both, holding the key
-		-- rebuilds the aeroplane every frame.
 		local now = os.clock()
-		if not pilot.controller.crashed and now - pilot.lastReset >= PlaneConfig.ResetCooldown then
-			pilot.lastReset = now
-			pilot.controller:reset()
+		if pilot.controller.crashed or now - pilot.lastReset < PlaneConfig.ResetCooldown then
+			return
+		end
+		pilot.lastReset = now
+		pilot.controller:reset()
+
+		-- Put the pilot back on the ground at the runway too. Sitting them in
+		-- the rebuilt aircraft normally does this by itself, but not if they
+		-- had climbed out or were mid-respawn.
+		local character = player.Character
+		local root = character and character:FindFirstChild("HumanoidRootPart") :: BasePart?
+		if root and pilot.controller.spawnCFrame then
+			root.CFrame = pilot.controller.spawnCFrame * CFrame.new(0, 6, 0)
 		end
 		return
 	end
@@ -383,7 +413,8 @@ end)
 
 local function ownedPlanes(player: Player): { [string]: boolean }
 	local owned: { [string]: boolean } = {}
-	for id in string.gmatch(player:GetAttribute("OwnedPlanes") or "trainer", "[^,]+") do
+	local raw = player:GetAttribute("OwnedPlanes")
+	for id in string.gmatch(if type(raw) == "string" then raw else "trainer", "[^,]+") do
 		owned[id] = true
 	end
 	return owned
@@ -392,6 +423,13 @@ end
 buyRemote.OnServerEvent:Connect(function(player, payload)
 	local pilot = pilots[player]
 	if not pilot or type(payload) ~= "table" or type(payload.id) ~= "string" then
+		return
+	end
+
+	-- The hangar is a place, not a menu. Checked here and not only in the UI,
+	-- because the UI is the client's and the client is not to be trusted.
+	if not pilot.controller:isNearSpawn() then
+		eventRemote:FireClient(player, { kind = "denied", reason = "Return to the runway first" })
 		return
 	end
 
@@ -419,8 +457,7 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 			player:SetAttribute("OwnedPlanes", table.concat(list, ","))
 		end
 
-		pilot.planeId = plane.id
-		publishStats(pilot)
+		equipPlane(pilot, plane.id)
 		eventRemote:FireClient(player, { kind = "bought", name = plane.name })
 		return
 	end
@@ -444,7 +481,12 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 
 		player:SetAttribute("Points", points - cost)
 		pilot.levels[upgrade.id] = level + 1
-		publishStats(pilot)
+		refreshStats(pilot)
+
+		-- A bigger tank is no use if it arrives empty and you are already at
+		-- the runway, so buying at the pad tops you up.
+		pilot.controller:refuel()
+
 		eventRemote:FireClient(player, {
 			kind = "bought",
 			name = `{upgrade.name} {level + 1}`,
@@ -491,8 +533,7 @@ local function passGate(pilot: Pilot, gate: CourseBuilder.Gate, radial: number)
 
 	local score = (player:GetAttribute("Score") or 0) + points
 	player:SetAttribute("Score", score)
-	-- Banked separately, and deliberately not wiped by a crash: an hour of
-	-- flying should leave something behind even if the last run ended in a cliff.
+	-- Banked separately, and deliberately not wiped by a crash.
 	player:SetAttribute("Points", (player:GetAttribute("Points") or 0) + points)
 	if score > (player:GetAttribute("Best") or 0) then
 		player:SetAttribute("Best", score)
@@ -532,39 +573,62 @@ local function missGate(pilot: Pilot, gate: CourseBuilder.Gate)
 end
 
 local function checkGate(pilot: Pilot)
-	local gate = pilot.gates[pilot.activeIndex]
-	local fuselage = pilot.controller.fuselage
+	local controller = pilot.controller
+	local fuselage = controller.fuselage
 
-	if not gate or not fuselage or pilot.controller.crashed then
+	if not fuselage or controller.crashed then
 		if fuselage then
 			pilot.lastPosition = fuselage.Position
 		end
 		return
 	end
 
-	local current = fuselage.Position
-
-	-- A respawn moves the aircraft further in one frame than flight ever could.
-	if (current - pilot.lastPosition).Magnitude > TELEPORT_JUMP then
-		pilot.lastPosition = current
+	-- A rebuilt aeroplane appears somewhere else entirely. The controller flags
+	-- it exactly rather than leaving detection to guess from a distance
+	-- threshold, which a fast aircraft could exceed legitimately.
+	if controller.teleported then
+		controller.teleported = false
+		pilot.lastPosition = fuselage.Position
 		return
 	end
 
-	local before = (pilot.lastPosition - gate.center):Dot(gate.normal)
-	local after = (current - gate.center):Dot(gate.normal)
+	local current = fuselage.Position
 
-	if before < 0 and after >= 0 then
-		local span = before - after
-		local t = if math.abs(span) > 1e-6 then before / span else 0
-		local crossing = pilot.lastPosition:Lerp(current, t)
+	for _ = 1, MAX_GATES_PER_FRAME do
+		local gate = pilot.gates[pilot.activeIndex]
+		if not gate then
+			break
+		end
 
-		local offset = crossing - gate.center
-		local radial = (offset - gate.normal * offset:Dot(gate.normal)).Magnitude
+		local before = (pilot.lastPosition - gate.center):Dot(gate.normal)
+		local after = (current - gate.center):Dot(gate.normal)
 
-		if radial <= gate.radius then
-			passGate(pilot, gate, radial)
-		elseif radial <= gate.radius * RingConfig.MissRadiusFactor then
+		if before >= 0 then
+			-- Already past this gate's plane the moment it became active, which
+			-- happens when the previous gate is passed while the next one is
+			-- alongside or behind. It can never be crossed forwards again, so
+			-- without this the course sticks on it and no further gate scores.
+			-- This is the "rings stop working" bug, and faster aircraft hit it
+			-- far more often because they cover more ground between gates.
 			missGate(pilot, gate)
+		elseif after >= 0 then
+			local span = before - after
+			local t = if math.abs(span) > 1e-6 then before / span else 0
+			local crossing = pilot.lastPosition:Lerp(current, t)
+
+			local offset = crossing - gate.center
+			local radial = (offset - gate.normal * offset:Dot(gate.normal)).Magnitude
+
+			if radial <= gate.radius then
+				passGate(pilot, gate, radial)
+			elseif radial <= gate.radius * RingConfig.MissRadiusFactor then
+				missGate(pilot, gate)
+			else
+				break
+			end
+		else
+			-- Not there yet.
+			break
 		end
 	end
 

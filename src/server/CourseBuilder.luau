@@ -29,8 +29,15 @@ export type Gate = {
 
 local CourseBuilder = {}
 
-local MIN_TURN_RADIUS = PlaneConfig.MaxSpeed / PlaneConfig.MaxTurnRate
-local CLIMB_SLOPE = PlaneConfig.MaxClimbRate / PlaneConfig.MaxSpeed
+-- Turning is now done by rolling and pulling rather than by a heading rate, so
+-- the tightest circle the aircraft can fly is set by how fast it can pitch:
+-- banked hard over, pulling at PitchRate turns at PitchRate.
+local MIN_TURN_RADIUS = PlaneConfig.MaxSpeed / PlaneConfig.PitchRate
+
+-- Climb is no longer capped by a vertical speed -- the aircraft can point
+-- straight up -- so this is a course-design choice rather than a limit of the
+-- machine: how steep a leg the course is willing to ask for.
+local CLIMB_SLOPE = RingConfig.PlanningClimbSlope
 
 local function lerp(a: number, b: number, t: number): number
 	return a + (b - a) * t

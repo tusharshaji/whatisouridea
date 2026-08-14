@@ -42,13 +42,23 @@ screenGui.Parent = player:WaitForChild("PlayerGui")
 -- Scoreboard
 --------------------------------------------------------------------------------
 
+-- Parked off the top of the screen. It drops into view on takeoff, so the
+-- runway is uncluttered and the scoreboard arriving is itself the cue that the
+-- run has started.
+local BOARD_HIDDEN = UDim2.new(0.5, -160, 0, -150)
+local BOARD_SHOWN = UDim2.new(0.5, -160, 0, 16)
+
 local board = Instance.new("Frame")
 board.Size = UDim2.new(0, 320, 0, 126)
-board.Position = UDim2.new(0.5, -160, 0, 16)
-board.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-board.BackgroundTransparency = 0.4
+board.Position = BOARD_HIDDEN
+board.BackgroundColor3 = Color3.fromRGB(10, 12, 16)
+board.BackgroundTransparency = 0.2
 board.BorderSizePixel = 0
 board.Parent = screenGui
+
+local boardStroke = Instance.new("UIStroke")
+boardStroke.Color = Color3.fromRGB(60, 66, 78)
+boardStroke.Parent = board
 
 local boardCorner = Instance.new("UICorner")
 boardCorner.CornerRadius = UDim.new(0, 8)
@@ -143,7 +153,13 @@ end
 -- The course, drawn locally
 --------------------------------------------------------------------------------
 
-type Gate = { center: Vector3, normal: Vector3, radius: number, parts: { BasePart } }
+type Gate = {
+	center: Vector3,
+	normal: Vector3,
+	radius: number,
+	parts: { BasePart },
+	faded: boolean,
+}
 
 local gates: { Gate } = {}
 local courseFolder: Folder? = nil
@@ -199,30 +215,54 @@ local function buildGate(index: number, center: Vector3, normal: Vector3, radius
 	end
 
 	model.Parent = courseFolder
-	return { center = center, normal = normal, radius = radius, parts = parts }
+	return { center = center, normal = normal, radius = radius, parts = parts, faded = false }
 end
 
 -- Light the active gate, dim the next few, hide the rest. All thirty at once is
 -- a wall of rings you cannot pick a line through.
+--
+-- A gate that has just been flown fades away rather than snapping to a colour:
+-- it flashes green on the way out, which is the confirmation you get without
+-- having to look at the scoreboard, and then leaves the sky clear behind you.
+local function styleGate(gate: Gate, color: Color3, transparency: number, animate: boolean)
+	for _, part in gate.parts do
+		part.Color = color
+		if animate then
+			TweenService:Create(
+				part,
+				TweenInfo.new(RingConfig.FadeTime, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+				{ Transparency = transparency }
+			):Play()
+		else
+			part.Transparency = transparency
+		end
+	end
+end
+
 local function refreshVisibility()
 	local active = player:GetAttribute("ActiveGate") or 1
 
 	for index, gate in gates do
-		local color, transparency
-
 		if index < active then
-			color, transparency = RingConfig.PassedColor, RingConfig.PassedTransparency
+			-- Fade out behind you. Only the one just passed animates; anything
+			-- further back is already gone.
+			local justPassed = index == active - 1
+			if justPassed and not gate.faded then
+				gate.faded = true
+				styleGate(gate, RingConfig.PassedColor, 1, true)
+			elseif not justPassed then
+				gate.faded = true
+				styleGate(gate, RingConfig.PassedColor, 1, false)
+			end
 		elseif index == active then
-			color, transparency = RingConfig.ActiveColor, 0
+			gate.faded = false
+			styleGate(gate, RingConfig.ActiveColor, 0, false)
 		elseif index <= active + RingConfig.VisibleAhead then
-			color, transparency = RingConfig.UpcomingColor, RingConfig.UpcomingTransparency
+			gate.faded = false
+			styleGate(gate, RingConfig.UpcomingColor, RingConfig.UpcomingTransparency, false)
 		else
-			color, transparency = RingConfig.UpcomingColor, 1
-		end
-
-		for _, part in gate.parts do
-			part.Color = color
-			part.Transparency = transparency
+			gate.faded = false
+			styleGate(gate, RingConfig.UpcomingColor, 1, false)
 		end
 	end
 end
@@ -283,7 +323,29 @@ local function number(name: string): number
 	return if type(value) == "number" then value else 0
 end
 
+-- Slide the scoreboard in on takeoff and out again on landing.
+local boardShown = false
+
+local function setBoardShown(shown: boolean)
+	if shown == boardShown then
+		return
+	end
+	boardShown = shown
+
+	TweenService:Create(
+		board,
+		TweenInfo.new(0.45, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+		{ Position = if shown then BOARD_SHOWN else BOARD_HIDDEN }
+	):Play()
+end
+
 RunService.RenderStepped:Connect(function()
+	-- Airborne, or already scoring: a pilot who lands mid-run keeps the board.
+	setBoardShown(
+		player:GetAttribute("Grounded") == false
+			or number("Score") > 0
+	)
+
 	scoreLabel.Text = string.format("%d", number("Score"))
 
 	local combo = number("Combo")

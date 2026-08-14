@@ -9,18 +9,14 @@
 -- ground near the runway. It could not see the mountains, so it never went to
 -- them.
 --
--- Two hard limits come out of PlaneConfig rather than out of taste, and the
--- generator derives them at runtime instead of trusting numbers typed here:
+-- The tightest corner the course may ask for comes out of the aircraft rather
+-- than out of taste: turning is rolling and pulling, so the smallest circle is
+-- MaxSpeed / PitchRate, about 148 studs. Two gates can never demand a change of
+-- direction sharper than that in the distance between them, and retuning the
+-- aeroplane retunes the course with it.
 --
---   Turn radius   MaxSpeed / MaxTurnRate = 220 / 55deg = about 229 studs. Two
---                 gates cannot demand a heading change the aircraft physically
---                 cannot fly in the distance between them.
---   Climb angle   atan(MaxClimbRate / MaxSpeed) = about 17.6 degrees. A gate
---                 cannot sit higher above the last one than that slope reaches
---                 across the gap.
---
--- Change the aircraft and the course follows it, because both come from the
--- same two numbers.
+-- Climb is not a limit any more -- the aircraft can point straight up -- so how
+-- steep a leg to allow is a design decision. See PlanningClimbSlope.
 
 return {
 	--------------------------------------------------------------------------
@@ -88,6 +84,12 @@ return {
 	EndMaxClearance = 65,
 	ClimbSafety = 0.7,
 
+	-- How steep a leg the course is willing to ask for, as rise over run. The
+	-- aircraft can point straight up, so this is taste rather than a limit:
+	-- 0.75 is about 37 degrees, steep enough to be interesting and shallow
+	-- enough that arriving at the gate with any speed left is possible.
+	PlanningClimbSlope = 0.75,
+
 	-- The height of the sea, and nowhere near a safe default. A generated map
 	-- puts sea level wherever the generator felt like, and this one sits at
 	-- -644. Leaving it at 0 forced every gate to at least (0 + radius + margin),
@@ -129,6 +131,7 @@ return {
 	UpcomingTransparency = 0.5,
 	PassedTransparency = 0.8,
 	VisibleAhead = 3,
+	FadeTime = 0.7, -- how long a gate takes to vanish once flown through
 
 	--------------------------------------------------------------------------
 	-- Scoring

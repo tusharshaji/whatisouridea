@@ -18,9 +18,12 @@
 --
 -- Stats are multipliers on PlaneConfig, applied per player:
 --
---   speed     MaxSpeed and MinFlightSpeed
---   handling  MaxTurnRate, BankRate and AutoLevelRate
---   climb     MaxClimbRate and MaxDescentRate
+--   speed      MaxSpeed and MinFlightSpeed
+--   handling   RollRate and YawRate
+--   climb      PitchRate, so it is really "how hard it pulls"
+--   fuel       tank capacity
+--   stability  how strongly the wings self-level. Per aircraft only, not
+--              buyable: it is the character of the machine, not an upgrade.
 --
 -- Nothing here touches the crash rules or the gate sizes, so a fully upgraded
 -- delta is faster and sharper but still has to be flown through the same rock.
@@ -32,6 +35,9 @@ export type PlaneDef = {
 	speed: number,
 	handling: number,
 	climb: number,
+	fuel: number,
+	stability: number, -- how hard the wings self-level. Low is twitchy and
+	-- rewards a good pilot; high is forgiving and slow to point anywhere new.
 	color: Color3,
 	blurb: string,
 }
@@ -57,38 +63,46 @@ UpgradeConfig.Planes = {
 		speed = 1,
 		handling = 1,
 		climb = 1,
+		fuel = 1,
+		stability = 1.35,
 		color = Color3.fromRGB(225, 225, 235),
-		blurb = "The one you start with. Forgiving, slow.",
+		blurb = "High wing, big propeller. Slow, and it wants to fly level.",
 	},
 	{
 		id = "sport",
 		name = "Sport",
 		cost = 3000,
 		speed = 1.2,
-		handling = 1.18,
+		handling = 1.25,
 		climb = 1.1,
+		fuel = 1.15,
+		stability = 1,
 		color = Color3.fromRGB(255, 132, 48),
-		blurb = "Quicker everywhere, turns a good deal tighter.",
+		blurb = "Low wing, clipped tips. Rolls quickly and will hold inverted.",
 	},
 	{
 		id = "jet",
 		name = "Jet",
 		cost = 9000,
 		speed = 1.5,
-		handling = 1.3,
+		handling = 1.45,
 		climb = 1.35,
+		fuel = 0.85,
+		stability = 0.7,
 		color = Color3.fromRGB(90, 170, 255),
-		blurb = "Fast enough that the late gates stop being optional.",
+		blurb = "Twin exhausts, swept wing. Drinks fuel and forgives nothing.",
 	},
 	{
 		id = "delta",
 		name = "Delta",
 		cost = 22000,
 		speed = 1.85,
-		handling = 1.55,
+		handling = 1.8,
 		climb = 1.6,
+		fuel = 0.7,
+		stability = 0.45,
 		color = Color3.fromRGB(190, 110, 255),
-		blurb = "Everything at once. Very little margin.",
+		blurb = "Three engines and a wing like a dart. Loops in its own length.",
 	},
 } :: { PlaneDef }
 
@@ -121,7 +135,17 @@ UpgradeConfig.Upgrades = {
 		baseCost = 600,
 		costGrowth = 1.75,
 		perLevel = 0.09,
-		blurb = "Climb and dive rate. Clears ridges sooner.",
+		blurb = "Pitch authority. Tighter loops, sharper pull-ups.",
+	},
+	{
+		id = "tank",
+		name = "Fuel Tank",
+		stat = "fuel",
+		levels = 6,
+		baseCost = 500,
+		costGrowth = 1.6,
+		perLevel = 0.22,
+		blurb = "How long you can stay up. Run dry and the engine quits.",
 	},
 } :: { UpgradeDef }
 
@@ -160,6 +184,8 @@ function UpgradeConfig.statsFor(planeId: string, levels: { [string]: number }): 
 		speed = plane.speed,
 		handling = plane.handling,
 		climb = plane.climb,
+		fuel = plane.fuel,
+		stability = plane.stability,
 	}
 
 	for _, upgrade in UpgradeConfig.Upgrades do

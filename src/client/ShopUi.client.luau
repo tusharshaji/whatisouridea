@@ -99,8 +99,30 @@ footer.Font = Enum.Font.Code
 footer.TextSize = 13
 footer.TextColor3 = DIM
 footer.TextXAlignment = Enum.TextXAlignment.Left
-footer.Text = "B to close  -  upgrades apply to your aircraft immediately"
+footer.Text = "B to close  -  buying a new aircraft restarts the run"
 footer.Parent = window
+
+-- Shown instead of the hangar when the pilot is out on the course. The server
+-- refuses purchases away from the runway regardless; this is so the refusal is
+-- explained rather than just felt.
+local awayNotice = Instance.new("TextLabel")
+awayNotice.Size = UDim2.new(0, 460, 0, 90)
+awayNotice.AnchorPoint = Vector2.new(0.5, 0.5)
+awayNotice.Position = UDim2.fromScale(0.5, 0.5)
+awayNotice.BackgroundColor3 = PANEL
+awayNotice.BackgroundTransparency = 0.05
+awayNotice.BorderSizePixel = 0
+awayNotice.Font = Enum.Font.Code
+awayNotice.TextSize = 17
+awayNotice.TextColor3 = Color3.fromRGB(255, 170, 90)
+awayNotice.TextWrapped = true
+awayNotice.Text = "THE HANGAR IS AT THE RUNWAY\n\nLand back at the strip to buy anything."
+awayNotice.Visible = false
+awayNotice.Parent = screenGui
+
+local noticeCorner = Instance.new("UICorner")
+noticeCorner.CornerRadius = UDim.new(0, 10)
+noticeCorner.Parent = awayNotice
 
 --------------------------------------------------------------------------------
 -- Rows
@@ -286,12 +308,37 @@ for _, upgrade in UpgradeConfig.Upgrades do
 	player:GetAttributeChangedSignal("Level_" .. upgrade.id):Connect(refresh)
 end
 
+local function atSpawn(): boolean
+	return player:GetAttribute("AtSpawn") == true
+end
+
+local function setOpen(open: boolean)
+	screenGui.Enabled = open
+	if not open then
+		return
+	end
+
+	local here = atSpawn()
+	shade.Visible = true
+	window.Visible = here
+	awayNotice.Visible = not here
+
+	if here then
+		refresh()
+	end
+end
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed and input.KeyCode == Enum.KeyCode.B then
-		screenGui.Enabled = not screenGui.Enabled
-		if screenGui.Enabled then
-			refresh()
-		end
+		setOpen(not screenGui.Enabled)
+	end
+end)
+
+-- Fly away with the hangar open and it closes itself, rather than leaving a
+-- window full of buttons the server is going to refuse.
+player:GetAttributeChangedSignal("AtSpawn"):Connect(function()
+	if screenGui.Enabled then
+		setOpen(true)
 	end
 end)
 
