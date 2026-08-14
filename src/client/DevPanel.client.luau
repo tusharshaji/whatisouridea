@@ -31,8 +31,11 @@ screenGui.IgnoreGuiInset = true
 screenGui.Enabled = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
+-- Grows to fit its buttons. A fixed height left the last three sitting outside
+-- the panel background.
 local window = Instance.new("Frame")
-window.Size = UDim2.new(0, 250, 0, 430)
+window.Size = UDim2.new(0, 250, 0, 0)
+window.AutomaticSize = Enum.AutomaticSize.Y
 window.Position = UDim2.new(0, 24, 0, 90)
 window.BackgroundColor3 = PANEL
 window.BackgroundTransparency = 0.08
@@ -52,6 +55,7 @@ local padding = Instance.new("UIPadding")
 padding.PaddingTop = UDim.new(0, 12)
 padding.PaddingLeft = UDim.new(0, 12)
 padding.PaddingRight = UDim.new(0, 12)
+padding.PaddingBottom = UDim.new(0, 12)
 padding.Parent = window
 
 local list = Instance.new("UIListLayout")

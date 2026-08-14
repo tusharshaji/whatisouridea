@@ -130,7 +130,13 @@ local fuelCaption, fuelBar, fuelValue = makeGauge("FUEL", UDim2.new(0, 16, 0, 56
 
 -- Artificial horizon. A small disc whose contents roll and slide with the
 -- aircraft, which is the quickest way to see that you are inverted.
-local horizonHolder = Instance.new("Frame")
+--
+-- This has to be a CanvasGroup, not a Frame. ClipsDescendants does not clip a
+-- descendant that has a non-zero Rotation, so the moment the aircraft banked,
+-- the oversized sky panel stopped being contained and painted itself across the
+-- screen. A CanvasGroup composites its children into a buffer its own size, so
+-- rotation is clipped like everything else.
+local horizonHolder = Instance.new("CanvasGroup")
 horizonHolder.Size = UDim2.new(0, 80, 0, 80)
 horizonHolder.Position = UDim2.new(0, 196, 0, 14)
 horizonHolder.BackgroundColor3 = Color3.fromRGB(30, 34, 42)
@@ -258,8 +264,12 @@ local settingsStroke = Instance.new("UIStroke")
 settingsStroke.Color = Color3.fromRGB(60, 66, 78)
 settingsStroke.Parent = settingsButton
 
+-- Height comes from the content, not from a number typed here. A fixed height
+-- was smaller than the rows inside it, so the last few lines rendered outside
+-- the panel background with nothing behind them.
 local settingsPanel = Instance.new("Frame")
-settingsPanel.Size = UDim2.new(0, 290, 0, 268)
+settingsPanel.Size = UDim2.new(0, 290, 0, 0)
+settingsPanel.AutomaticSize = Enum.AutomaticSize.Y
 settingsPanel.Position = UDim2.new(1, -324, 0, 150)
 settingsPanel.BackgroundColor3 = GLASS
 settingsPanel.BackgroundTransparency = 0.08
@@ -279,6 +289,7 @@ local settingsPadding = Instance.new("UIPadding")
 settingsPadding.PaddingTop = UDim.new(0, 14)
 settingsPadding.PaddingLeft = UDim.new(0, 16)
 settingsPadding.PaddingRight = UDim.new(0, 16)
+settingsPadding.PaddingBottom = UDim.new(0, 14)
 settingsPadding.Parent = settingsPanel
 
 local settingsList = Instance.new("UIListLayout")
@@ -306,14 +317,19 @@ settingsRow(4, "A / D        roll, no limit", WHITE, 14)
 settingsRow(5, "Q / E        rudder", WHITE, 14)
 settingsRow(6, "R            restart run", WHITE, 14)
 settingsRow(7, "B            hangar (at runway)", WHITE, 14)
-settingsRow(8, "", DIM, 8)
-settingsRow(9, "Hold UP through the vertical and", DIM, 12)
-settingsRow(10, "the aircraft will loop. Wings level", DIM, 12)
-settingsRow(11, "themselves only while upright, so", DIM, 12)
-settingsRow(12, "inverted flight holds.", DIM, 12)
-settingsRow(13, "", DIM, 8)
-settingsRow(14, "Watch AGL, not ALT. Fuel burns", DIM, 12)
-settingsRow(15, "with throttle; empty means glide.", DIM, 12)
+settingsRow(8, "", DIM, 6)
+settingsRow(9, "CAMERA", ACCENT, 16)
+settingsRow(10, "RIGHT DRAG   look around", WHITE, 14)
+settingsRow(11, "SCROLL       zoom in / out", WHITE, 14)
+settingsRow(12, "             recentres on its own", DIM, 12)
+settingsRow(13, "", DIM, 6)
+settingsRow(14, "Hold UP through the vertical and", DIM, 12)
+settingsRow(15, "the aircraft will loop. Wings level", DIM, 12)
+settingsRow(16, "themselves only while upright, so", DIM, 12)
+settingsRow(17, "inverted flight holds.", DIM, 12)
+settingsRow(18, "", DIM, 6)
+settingsRow(19, "Watch AGL, not ALT. Fuel burns", DIM, 12)
+settingsRow(20, "with throttle; empty means glide.", DIM, 12)
 
 settingsButton.Activated:Connect(function()
 	local opening = not settingsPanel.Visible

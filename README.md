@@ -60,6 +60,8 @@ You are seated in your own aircraft automatically when you join.
 | `Q` / `E` | Rudder |
 | `R` | Restart the run, back at the runway |
 | `B` | Hangar (only at the runway) |
+| Right-drag | Look around; recentres itself after a moment |
+| Scroll | Camera distance |
 
 Hold `W`; once the centre bar reads `ROTATE`, pull back. Watch `AGL` rather than
 `ALT` -- `ALT` is height above sea level and says nothing about the mountain
@@ -181,6 +183,7 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `src/shared/RingConfig.luau` | Every course and scoring value |
 | `src/shared/UpgradeConfig.luau` | Aircraft, upgrades, prices |
 | `src/shared/Ensure.luau` | Get-or-create, instead of waiting forever |
+| `src/client/CameraRig.client.luau` | Chase camera |
 | `src/client/DevPanel.client.luau` | Test panel, `F4` |
 | `src/shared/DevConfig.luau` | Who is allowed to use it |
 | `tools/MeasureMap.luau` | Measures your island. Not part of the game. |
@@ -216,6 +219,16 @@ and refused all descent. Anything asking "is it airborne" must raycast.
 
 **Gate parts must keep `CanQuery = false`.** A queryable gate registers as solid
 rock in the crash sweep and as ground in the altitude probe.
+
+**`ClipsDescendants` does not clip a rotated descendant.** The artificial horizon
+is a `CanvasGroup` for exactly this reason: as a plain Frame it contained its
+oversized sky panel perfectly until the aircraft banked, at which point rotation
+switched clipping off and it painted across the screen. A CanvasGroup composites
+its children into a buffer its own size, so rotation is clipped like anything
+else. Any rotating UI needs the same treatment.
+
+**Panels that list things use `AutomaticSize`.** Fixed heights were smaller than
+the content and the last few rows rendered outside the background.
 
 **Rings are drawn by the client, for its own course only.** They were server
 instances once, which meant everyone could see everyone's rings and one pilot

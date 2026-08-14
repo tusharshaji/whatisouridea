@@ -132,6 +132,32 @@ return {
 	ResetCooldown = 1,
 
 	--------------------------------------------------------------------------
+	-- Camera
+	--
+	-- A chase view sitting behind and above the aircraft. Right-drag looks
+	-- around, and lets go back to centre on its own after a moment, because a
+	-- view you have to put back yourself is a view you fly into a mountain with.
+	--------------------------------------------------------------------------
+	CameraDistance = 48, -- studs behind
+	CameraHeight = 13, -- studs above
+	CameraMinDistance = 24, -- scroll wheel range
+	CameraMaxDistance = 95,
+	CameraZoomStep = 6,
+	CameraLookAhead = 55, -- how far in front of the nose the camera aims, which
+	-- is what puts the next gate in the middle of the screen rather than the
+	-- tail of your own aeroplane
+	CameraStiffness = 10, -- how quickly the camera closes on where it should be
+	CameraRollFollow = 0.45, -- how much of the aircraft's roll the camera copies.
+	-- Zero is a level horizon and no sense of rolling at all; one is fully
+	-- barrel-rolling the screen, which is unreadable and makes people ill.
+	CameraSensitivity = 0.007, -- radians of look per pixel of mouse movement
+	CameraPitchLimit = math.rad(78), -- how far up or down the look can be pushed
+	CameraRecenterDelay = 1.1, -- seconds after letting go before it drifts back
+	CameraRecenterRate = 3, -- how fast it drifts back once it starts
+	CameraCollisionPadding = 5, -- keep the camera this far off any surface it
+	-- would otherwise end up inside
+
+	--------------------------------------------------------------------------
 	-- Spawn
 	--------------------------------------------------------------------------
 	SpawnRadius = 260, -- how close to the runway counts as "at spawn" for the
