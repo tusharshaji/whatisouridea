@@ -31,7 +31,20 @@ return {
 	RingCount = 30,
 	FirstGateDistance = 800, -- runway to gate one, long enough to get airborne
 
-	FallbackExtent = 4096, -- only used if no terrain has been generated
+	-- Where the land actually is.
+	--
+	-- Terrain.MaxExtents is not trustworthy: on a generated map it can report a
+	-- region wildly larger than anything that was built, and the course then
+	-- plans across a box that is mostly empty and not even centred on the
+	-- island. Measure the map with tools/MeasureMap.luau and put the real
+	-- numbers here. Set MapOverride to nil to go back to reading MaxExtents.
+	MapOverride = {
+		minX = -6000,
+		maxX = 600,
+		minZ = -6000,
+		maxZ = 500,
+	},
+	FallbackExtent = 4096, -- only if there is no override and no usable terrain
 	EdgeMargin = 400,
 
 	--------------------------------------------------------------------------
@@ -74,7 +87,13 @@ return {
 	EndMinClearance = 15,
 	EndMaxClearance = 65,
 	ClimbSafety = 0.7,
-	WaterLevel = 0,
+
+	-- The height of the sea, and nowhere near a safe default. A generated map
+	-- puts sea level wherever the generator felt like, and this one sits at
+	-- -644. Leaving it at 0 forced every gate to at least (0 + radius + margin),
+	-- which on a map whose highest peak is Y=34 clamped the entire course above
+	-- the island: rings hanging in clear sky with nothing to hit. Measure it.
+	WaterLevel = -644,
 	CeilingMargin = 150,
 
 	-- A gate is only worth having if terrain stands above it. This is the

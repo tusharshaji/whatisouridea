@@ -90,15 +90,26 @@ local function groundAt(x: number, z: number): number?
 	return if hit then hit.Position.Y else nil
 end
 
--- The generated area, read from the terrain itself so the course fills whatever
--- map exists rather than a size written down here. Extents are 4-stud voxels.
+-- Where to lay courses.
+--
+-- A measured override wins outright. Terrain.MaxExtents sounds like the right
+-- source and is not: on a generated map it can report a region far larger than
+-- anything built, so the survey spreads its samples across mostly nothing and
+-- the course gets planned on a box that is not even centred on the island.
 local function mapBounds(): (number, number, number, number)
+	local override = RingConfig.MapOverride
+	if override then
+		return override.minX, override.maxX, override.minZ, override.maxZ
+	end
+
 	local extents = Workspace.Terrain.MaxExtents
 	local minX, maxX = extents.Min.X * 4, extents.Max.X * 4
 	local minZ, maxZ = extents.Min.Z * 4, extents.Max.Z * 4
 	local width = maxX - minX
 
 	if width < 512 or width > 60000 then
+		warn("[Main] Terrain.MaxExtents is unusable and no MapOverride is set. "
+			.. "Measure the map with tools/MeasureMap.luau.")
 		local half = RingConfig.FallbackExtent / 2
 		return -half, half, -half, half
 	end
@@ -126,7 +137,8 @@ task.spawn(function()
 		RingConfig.SurveyCell,
 		probe,
 		PlaneConfig.MaxAltitude + 500,
-		PlaneConfig.VoidHeight
+		PlaneConfig.VoidHeight,
+		RingConfig.WaterLevel
 	)
 end)
 
