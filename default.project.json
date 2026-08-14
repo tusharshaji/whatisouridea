@@ -20,6 +20,9 @@
         },
         "BuyUpgrade": {
           "$className": "RemoteEvent"
+        },
+        "DevAction": {
+          "$className": "RemoteEvent"
         }
       }
     },

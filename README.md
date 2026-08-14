@@ -181,7 +181,21 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `src/shared/RingConfig.luau` | Every course and scoring value |
 | `src/shared/UpgradeConfig.luau` | Aircraft, upgrades, prices |
 | `src/shared/Ensure.luau` | Get-or-create, instead of waiting forever |
+| `src/client/DevPanel.client.luau` | Test panel, `F4` |
+| `src/shared/DevConfig.luau` | Who is allowed to use it |
 | `tools/MeasureMap.luau` | Measures your island. Not part of the game. |
+
+## Dev panel
+
+`F4`, in Studio or as the place owner. Grants points, unlocks aircraft and
+upgrades, toggles invincibility, refuels, skips to the active gate, rolls a new
+course, and wipes progress to test the ramp from zero.
+
+Every button fires a remote the server re-authorises with `DevConfig` on
+arrival. The `IsDev` attribute only decides whether the panel is drawn -- a
+client can fire that remote whatever it was told, so the flag is presentation
+and the check is the real gate. Add collaborators by user id in
+`DevConfig.UserIds`.
 
 ### Things that are easy to break
 

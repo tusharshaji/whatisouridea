@@ -448,6 +448,31 @@ function PlaneController:refuel()
 	self.engineOut = false
 end
 
+-- Drop the aircraft somewhere else, already flying. Used by the dev panel to
+-- skip to a gate without flying the whole course to reach it.
+--
+-- `teleported` matters: gate detection works by comparing where the aircraft
+-- was against where it is, and a jump of a few thousand studs would read as
+-- having crossed everything in between.
+function PlaneController:placeAt(target: CFrame, speed: number)
+	if not self.model or not self.fuselage then
+		return
+	end
+
+	self.orientation = target - target.Position
+	self.speed = speed
+	self.throttle = math.clamp(speed / math.max(self.maxSpeed, 1), 0, 1)
+	self.sinkRate = 0
+
+	self.model:PivotTo(target * self.fuselage.CFrame:ToObjectSpace(self.model:GetPivot()))
+	self.fuselage.AssemblyLinearVelocity = self.orientation.LookVector * speed
+	self.fuselage.AssemblyAngularVelocity = Vector3.zero
+
+	self.lastPosition = self.fuselage.Position
+	self.teleported = true
+	self.crashImmuneUntil = os.clock() + Config.CrashGracePeriod
+end
+
 --------------------------------------------------------------------------------
 -- Crashing
 --------------------------------------------------------------------------------
@@ -760,7 +785,12 @@ function PlaneController:step(dt: number)
 	--------------------------------------------------------------------------
 	-- Impact
 	--------------------------------------------------------------------------
-	if Config.CrashEnabled and airborne and os.clock() >= self.crashImmuneUntil then
+	if
+		Config.CrashEnabled
+		and not self.invincible
+		and airborne
+		and os.clock() >= self.crashImmuneUntil
+	then
 		local travel = position - self.lastPosition
 
 		if travel.Magnitude > 0.01 then
@@ -779,7 +809,13 @@ function PlaneController:step(dt: number)
 	end
 
 	if altitude < Config.VoidHeight then
-		self:crash()
+		-- Falling out of the world is not a crash worth watching when the point
+		-- is to be untouchable, so invincibility just puts it back.
+		if self.invincible then
+			self:reset()
+		else
+			self:crash()
+		end
 		return
 	end
 

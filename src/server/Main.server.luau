@@ -19,6 +19,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 
+local DevConfig = require(ReplicatedStorage.Shared.DevConfig)
 local PlaneConfig = require(ReplicatedStorage.Shared.PlaneConfig)
 local RingConfig = require(ReplicatedStorage.Shared.RingConfig)
 local UpgradeConfig = require(ReplicatedStorage.Shared.UpgradeConfig)
@@ -75,6 +76,7 @@ local inputRemote = ensure(remotes, "PlaneInput", "RemoteEvent") :: RemoteEvent
 local courseRemote = ensure(remotes, "CourseData", "RemoteEvent") :: RemoteEvent
 local eventRemote = ensure(remotes, "GameEvent", "RemoteEvent") :: RemoteEvent
 local buyRemote = ensure(remotes, "BuyUpgrade", "RemoteEvent") :: RemoteEvent
+local devRemote = ensure(remotes, "DevAction", "RemoteEvent") :: RemoteEvent
 
 -- One filter for every raycast: no aircraft and no character should ever read as
 -- terrain. The pilot's own character is welded into the seat and sits directly
@@ -303,6 +305,9 @@ local function addPilot(player: Player)
 	player:SetAttribute("Multiplier", 1)
 	player:SetAttribute("Crashed", false)
 	player:SetAttribute("OwnedPlanes", "trainer")
+	-- Only decides whether the panel is drawn. Every action is re-checked on
+	-- arrival, because an attribute is not a permission.
+	player:SetAttribute("IsDev", DevConfig.isDeveloper(player))
 
 	-- Equip rather than just apply stats: this is what gives the aircraft its
 	-- colour and its actual shape, and the controller built a default one in
@@ -492,6 +497,89 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 			name = `{upgrade.name} {level + 1}`,
 		})
 	end
+end)
+
+--------------------------------------------------------------------------------
+-- Dev panel
+--
+-- Re-authorised on every action. The client is told whether it is a developer
+-- so it knows whether to draw the panel, and that answer is worth nothing here:
+-- a client can fire this remote whatever it was told.
+--------------------------------------------------------------------------------
+
+local function grantAllPlanes(player: Player)
+	local ids = {}
+	for _, plane in UpgradeConfig.Planes do
+		table.insert(ids, plane.id)
+	end
+	player:SetAttribute("OwnedPlanes", table.concat(ids, ","))
+end
+
+devRemote.OnServerEvent:Connect(function(player, payload)
+	if not DevConfig.isDeveloper(player) then
+		warn(`[Main] refused a dev action from {player.Name}`)
+		return
+	end
+
+	local pilot = pilots[player]
+	if not pilot or type(payload) ~= "table" then
+		return
+	end
+
+	local action = payload.action
+
+	if action == "points" then
+		player:SetAttribute("Points", (player:GetAttribute("Points") or 0) + DevConfig.PointsGrant)
+	elseif action == "unlockAll" then
+		grantAllPlanes(player)
+		for _, upgrade in UpgradeConfig.Upgrades do
+			pilot.levels[upgrade.id] = upgrade.levels
+		end
+		refreshStats(pilot)
+		pilot.controller:refuel()
+	elseif action == "maxUpgrades" then
+		for _, upgrade in UpgradeConfig.Upgrades do
+			pilot.levels[upgrade.id] = upgrade.levels
+		end
+		refreshStats(pilot)
+		pilot.controller:refuel()
+	elseif action == "unlockPlanes" then
+		grantAllPlanes(player)
+	elseif action == "setPlane" and type(payload.id) == "string" then
+		-- No purchase and no runway check: the point of the panel is to skip
+		-- exactly those.
+		grantAllPlanes(player)
+		equipPlane(pilot, payload.id)
+	elseif action == "refuel" then
+		pilot.controller:refuel()
+	elseif action == "invincible" then
+		pilot.controller.invincible = not pilot.controller.invincible
+		player:SetAttribute("Invincible", pilot.controller.invincible)
+	elseif action == "skipGate" then
+		-- Drop in on the approach to the active gate, lined up and at speed.
+		local gate = pilot.gates[pilot.activeIndex]
+		if gate then
+			local approach = gate.center - gate.normal * 420
+			pilot.controller:placeAt(
+				CFrame.lookAt(approach, gate.center),
+				pilot.controller.maxSpeed * 0.7
+			)
+			pilot.lastPosition = pilot.controller.fuselage.Position
+		end
+	elseif action == "newCourse" then
+		pilot.lap += 1
+		task.spawn(buildCourse, pilot)
+	elseif action == "wipe" then
+		player:SetAttribute("Points", 0)
+		player:SetAttribute("Best", 0)
+		player:SetAttribute("OwnedPlanes", "trainer")
+		pilot.levels = {}
+		equipPlane(pilot, "trainer")
+	else
+		return
+	end
+
+	eventRemote:FireClient(player, { kind = "dev", action = tostring(action) })
 end)
 
 --------------------------------------------------------------------------------
