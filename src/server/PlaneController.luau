@@ -416,6 +416,11 @@ function PlaneController:build()
 	self.crashImmuneUntil = os.clock() + Config.CrashGracePeriod
 	self.teleported = true
 
+	-- Whoever is in the front seat, and whether the pilot has chosen to be out of
+	-- it. A new airframe starts with nobody in it and no such decision made.
+	self.seated = nil :: Player?
+	self.dismounted = false
+
 	self:wireSeats()
 	self:claimOwnership()
 	self:seatPilot()
@@ -467,6 +472,7 @@ function PlaneController:wireSeats()
 		-- for. Sitting behind yourself would just park it.
 		if who == self.player then
 			if seat.Occupant == nil then
+				self.dismounted = false
 				seat:Sit(humanoid)
 			end
 			return
@@ -477,18 +483,45 @@ function PlaneController:wireSeats()
 		end
 	end)
 
-	-- Anyone who is not the owner is put back out of the pilot's seat.
 	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
-		local occupant = seat.Occupant
-		if not occupant then
+		-- Seats from a previous airframe still fire this as they are destroyed,
+		-- and acting on one would mean a rebuild reading as somebody getting out.
+		if self.seat ~= seat then
 			return
 		end
-		if playerOf(occupant) ~= self.player then
-			occupant.Sit = false
+
+		local occupant = seat.Occupant
+		local who = playerOf(occupant)
+		local left = self.seated
+		self.seated = who
+
+		-- Anyone who is not the owner is put back out of the pilot's seat.
+		if occupant then
+			if who ~= self.player then
+				occupant.Sit = false
+			end
+			return
+		end
+
+		-- Empty now. Only the owner standing up under their own power counts as
+		-- getting out: being ejected is somebody else leaving, and dying is
+		-- answered by the respawn putting them back.
+		if left ~= self.player then
+			return
+		end
+
+		local character = self.player.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health > 0 then
+			self.dismounted = true
 		end
 	end)
 
 	rear:GetPropertyChangedSignal("Occupant"):Connect(function()
+		if self.rearSeat ~= rear then
+			return
+		end
+
 		local occupant = rear.Occupant
 		if not occupant then
 			self.passenger = nil
@@ -601,6 +634,13 @@ function PlaneController:supervise()
 		return
 	end
 
+	-- So is getting out and standing on the runway. The watchdog is here to undo
+	-- accidents, not decisions, and without this it put the pilot straight back
+	-- in the cockpit every time they jumped out. F or R gets them back in.
+	if self.dismounted then
+		return
+	end
+
 	seat:Sit(humanoid)
 end
 
@@ -621,6 +661,11 @@ end
 -- window is missed -- a slow respawn, a seat briefly held by somebody else --
 -- supervise() picks it up on its next tick, so nothing here has to be exhaustive.
 function PlaneController:seatPilot()
+	-- An explicit request to be in the cockpit, so it clears any earlier decision
+	-- to be out of it. The two callers are a fresh airframe and a respawned
+	-- character, and both should end with the pilot flying.
+	self.dismounted = false
+
 	self.seatToken = (self.seatToken or 0) + 1
 	local token = self.seatToken
 

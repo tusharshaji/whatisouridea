@@ -61,6 +61,7 @@ You are seated in your own aircraft automatically when you join.
 | `Q` / `E` | Rudder, deliberately weak |
 | `R` | Restart the run, back at the runway |
 | `B` | Hangar (only at the runway) |
+| `Space` | Get out, in the air or on the ground |
 | `F` | Board a parked aircraft -- their back seat, or your own cockpit |
 | Right-drag | Look around; recentres itself after a moment |
 | Scroll | Camera distance |
@@ -280,6 +281,14 @@ player could previously end up permanently aeroplaneless -- a seat taken by
 somebody else, a respawn that outlasted the seating retries, an airframe deleted
 by the engine -- are states this notices, rather than sequences the code had to
 have predicted. Prefer adding a check here over adding another `task.delay`.
+
+**The watchdog undoes accidents, not decisions.** The first version of it put the
+pilot straight back in the cockpit the instant they jumped out, so getting out
+was impossible. It now tracks a `dismounted` flag, set when the owner -- and only
+the owner -- stands up under their own power. Being ejected from someone else's
+seat is not getting out, and neither is dying, since respawning re-seats you
+anyway. `F` and `R` both clear it. Any future rule of the form "put the player
+back" needs the same question asked of it: did they choose this?
 
 **Height is measured against the ground below, not against world Y.** An earlier
 version compared altitude to a fixed number taken off the runway, which was fine
