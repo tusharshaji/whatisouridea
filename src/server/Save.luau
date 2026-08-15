@@ -35,7 +35,21 @@ local STORE_NAME = "PilotProgress_v1"
 local KEY_PREFIX = "Pilot_"
 
 local ATTEMPTS = 4
-local RETRY_DELAY = 2
+local RETRY_DELAY = 1.5
+
+-- Failures worth retrying are the transient ones: throttling, a timeout, a
+-- service having a bad minute. These are not. Retrying "Studio access to APIs
+-- is not allowed" four times with a backoff means twelve seconds of waiting for
+-- an answer that was decided before the server started, and if anything is
+-- waiting on the load -- a player wanting an aeroplane, say -- twelve seconds is
+-- an eternity. Match one of these and the store is switched off for the session.
+local PERMANENT = {
+	"not allowed",
+	"403",
+	"not enabled",
+	"api services",
+	"publish",
+}
 
 local Save = {}
 
@@ -134,6 +148,37 @@ local function sanitise(raw: any): Profile
 end
 
 --------------------------------------------------------------------------------
+-- Failure handling
+--------------------------------------------------------------------------------
+
+-- Switch the store off for the rest of the session when an error says it is
+-- never going to work. Every profile loaded from here on is marked unsaveable,
+-- which is the safe direction: the game runs on defaults and writes nothing.
+local function shutDown(reason: string)
+	if not store then
+		return
+	end
+	store = nil
+	warn(`[Save] disabling saved progress for this session: {reason}`)
+	if RunService:IsStudio() then
+		warn(
+			"[Save] If that mentions API services, it is Game Settings -> Security -> "
+				.. "Enable Studio Access to API Services. Everything else still works without it."
+		)
+	end
+end
+
+local function isPermanent(err: any): boolean
+	local text = string.lower(tostring(err))
+	for _, needle in PERMANENT do
+		if string.find(text, needle, 1, true) then
+			return true
+		end
+	end
+	return false
+end
+
+--------------------------------------------------------------------------------
 -- Load
 --------------------------------------------------------------------------------
 
@@ -158,6 +203,13 @@ function Save.load(player: Player): Profile
 				return defaults()
 			end
 			return sanitise(result)
+		end
+
+		if isPermanent(result) then
+			shutDown(tostring(result))
+			local profile = defaults()
+			profile.saveable = false
+			return profile
 		end
 
 		warn(`[Save] load {attempt}/{ATTEMPTS} failed for {player.Name}: {result}`)
@@ -200,21 +252,29 @@ function Save.store(player: Player, profile: Profile): boolean
 
 	local key = KEY_PREFIX .. player.UserId
 
+	-- UpdateAsync rather than SetAsync: if the player bounced between servers the
+	-- older one can still be flushing, and this at least keeps the higher best
+	-- score instead of letting whichever write lands last win outright.
+	local function merge(existing: any)
+		if type(existing) == "table" and type(existing.best) == "number" then
+			payload.best = math.max(payload.best, existing.best)
+		end
+		return payload
+	end
+
 	for attempt = 1, ATTEMPTS do
-		-- UpdateAsync rather than SetAsync: if the player bounced between servers
-		-- the older one can still be flushing, and this at least keeps the higher
-		-- best score instead of letting whichever write lands last win outright.
+		local target = store :: DataStore
 		local ok, err = pcall(function()
-			(store :: DataStore):UpdateAsync(key, function(existing)
-				if type(existing) == "table" and type(existing.best) == "number" then
-					payload.best = math.max(payload.best, existing.best)
-				end
-				return payload
-			end)
+			target:UpdateAsync(key, merge)
 		end)
 
 		if ok then
 			return true
+		end
+
+		if isPermanent(err) then
+			shutDown(tostring(err))
+			return false
 		end
 
 		warn(`[Save] save {attempt}/{ATTEMPTS} failed for {player.Name}: {err}`)
@@ -224,6 +284,12 @@ function Save.store(player: Player, profile: Profile): boolean
 	end
 
 	return false
+end
+
+-- A fresh profile, for a caller that needs something to fly on while the real
+-- one is still being read.
+function Save.blank(): Profile
+	return defaults()
 end
 
 function Save.isAvailable(): boolean

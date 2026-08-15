@@ -61,7 +61,16 @@ planesFolder.Parent = Workspace
 -- into low ground -- no crash, no wreck, no respawn, just a pilot standing on
 -- the runway wondering where their aircraft went. It has to sit below the point
 -- at which the game itself calls you out of the world.
-Workspace.FallenPartsDestroyHeight = PlaneConfig.VoidHeight - 500
+--
+-- In a pcall because everything below this line -- planes, courses, scoring, the
+-- dev panel -- lives in the same script, and a single throwing property write at
+-- the top would take the entire game down with it.
+local heightOk, heightErr = pcall(function()
+	Workspace.FallenPartsDestroyHeight = PlaneConfig.VoidHeight - 500
+end)
+if not heightOk then
+	warn(`[Main] could not set FallenPartsDestroyHeight: {heightErr}`)
+end
 
 pcall(function()
 	PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
@@ -335,6 +344,48 @@ local function savePilot(pilot: Pilot)
 	Save.store(pilot.player, profileFor(pilot))
 end
 
+-- Fold a loaded profile into a pilot who is already flying.
+--
+-- Everything about progress arrives this way rather than being waited for,
+-- because the DataStore read is the one part of joining that can take seconds or
+-- never finish, and nothing about getting into an aeroplane should depend on it.
+-- Blocking on it here once meant that a Studio session without API access spent
+-- twelve seconds with no aircraft, no attributes and no dev panel while the read
+-- retried an error that was never going to clear.
+local function applyProfile(pilot: Pilot, profile: Save.Profile)
+	local player = pilot.player
+
+	-- Anything earned in the seconds before the profile landed is kept, not
+	-- overwritten. Small, but losing points to a race is the sort of thing that
+	-- makes a save system feel untrustworthy.
+	local earned = player:GetAttribute("Points") or 0
+	player:SetAttribute("Points", profile.points + earned)
+	player:SetAttribute("Best", math.max(profile.best, player:GetAttribute("Best") or 0))
+
+	local owned = ownedSet(player)
+	for id in profile.owned do
+		owned[id] = true
+	end
+	writeOwned(player, owned)
+
+	for id, level in profile.levels do
+		pilot.levels[id] = math.max(pilot.levels[id] or 0, level)
+	end
+
+	-- Only from here on, so the autosave and the leave handler cannot write the
+	-- defaults the pilot was flying on a moment ago over their real save.
+	pilot.saveable = profile.saveable
+	player:SetAttribute("ProgressSaving", profile.saveable)
+
+	-- Rebuilding the airframe interrupts whatever they are doing, so it happens
+	-- only when the saved aircraft is not the one already under them.
+	if profile.planeId ~= pilot.planeId then
+		equipPlane(pilot, profile.planeId)
+	else
+		refreshStats(pilot)
+	end
+end
+
 local function addPilot(player: Player, profile: Save.Profile)
 	local slot = claimSlot()
 	local controller = PlaneController.new(
@@ -424,17 +475,29 @@ local function onPlayerAdded(player: Player)
 
 	refreshProbeFilter()
 
-	-- Yields on the DataStore, so nothing above may depend on it having run. The
-	-- player stands on the spawn pad for a moment; the loading screen is still
-	-- up, because it waits for their aircraft to exist.
-	local profile = Save.load(player)
+	-- In the air first, progress second. The aeroplane, the course and every
+	-- attribute exist before the DataStore is asked anything, so a store that is
+	-- slow, throttled or switched off costs the player nothing but a few seconds
+	-- of showing zero points.
+	--
+	-- Defaults are deliberately marked unsaveable until the real profile lands,
+	-- so an autosave or a quick disconnect in that window cannot write an empty
+	-- bank over a full one.
+	local starting = Save.blank()
+	starting.saveable = false
+	addPilot(player, starting)
 
-	-- They can leave during a load, especially a retrying one.
-	if player.Parent == nil then
-		return
-	end
+	task.spawn(function()
+		local profile = Save.load(player)
 
-	addPilot(player, profile)
+		-- They can leave during a load, especially a retrying one.
+		local pilot = pilots[player]
+		if not pilot or player.Parent == nil then
+			return
+		end
+
+		applyProfile(pilot, profile)
+	end)
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
