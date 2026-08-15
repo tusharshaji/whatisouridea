@@ -200,13 +200,13 @@ local function refresh()
 		)
 
 		if plane.id == current then
-			Theme.setButton(row.button, "FLYING", C.InkRaised, C.Ink, true)
+			Theme.setButton(row.button, "FLYING", C.Neutral, C.NeutralDeep, true)
 		elseif owned[plane.id] then
 			Theme.setButton(row.button, "SELECT", C.Good, C.GoodDeep)
 		elseif points >= plane.cost then
 			Theme.setButton(row.button, string.format("BUY   %d", plane.cost), C.Accent, C.AccentDeep)
 		else
-			Theme.setButton(row.button, string.format("%d", plane.cost), C.Trough, C.InkRaised, true)
+			Theme.setButton(row.button, string.format("%d", plane.cost), C.Trough, C.NeutralDeep, true)
 		end
 	end
 
@@ -224,11 +224,11 @@ local function refresh()
 		)
 
 		if not cost then
-			Theme.setButton(row.button, "MAXED", C.InkRaised, C.Ink, true)
+			Theme.setButton(row.button, "MAXED", C.Neutral, C.NeutralDeep, true)
 		elseif points >= cost then
 			Theme.setButton(row.button, string.format("BUY   %d", cost), C.Accent, C.AccentDeep)
 		else
-			Theme.setButton(row.button, string.format("%d", cost), C.Trough, C.InkRaised, true)
+			Theme.setButton(row.button, string.format("%d", cost), C.Trough, C.NeutralDeep, true)
 		end
 	end
 end

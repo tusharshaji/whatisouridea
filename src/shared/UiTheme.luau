@@ -38,6 +38,11 @@ UiTheme.Colour = {
 	Trough = Color3.fromRGB(40, 45, 56), -- empty part of a bar
 	Line = Color3.fromRGB(62, 70, 86),
 
+	-- Unfilled buttons. Light enough to read pale text against, which the panel
+	-- colours are not: a button is meant to look pressable, not to disappear.
+	Neutral = Color3.fromRGB(52, 59, 73),
+	NeutralDeep = Color3.fromRGB(36, 41, 52),
+
 	Text = Color3.fromRGB(244, 246, 250),
 	Muted = Color3.fromRGB(146, 155, 172),
 	OnAccent = Color3.fromRGB(22, 18, 12), -- text on a filled accent button
@@ -242,32 +247,71 @@ end
 -- Controls
 --------------------------------------------------------------------------------
 
+-- A button is a transparent TextButton wrapping a coloured Fill and a separate
+-- Label.
+--
+-- The obvious build -- colour the TextButton and hang a UIGradient on it -- does
+-- not work: a UIGradient tints its parent's TEXT as well as its background, so a
+-- dark gradient multiplies a pale label down until it is unreadable. Keeping the
+-- gradient on a child frame leaves the label alone.
 function UiTheme.button(parent: Instance, height: number, text: string, colour: Color3, deep: Color3): TextButton
 	local button = Instance.new("TextButton")
 	button.Size = UDim2.new(1, 0, 0, height)
-	button.BackgroundColor3 = colour
-	button.BorderSizePixel = 0
-	button.Font = UiTheme.Font.Strong
-	button.TextSize = 14
-	button.TextColor3 = C.OnAccent
-	button.Text = text
-	button.AutoButtonColor = true
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.AutoButtonColor = false
 	button.Parent = parent
 
-	UiTheme.corner(button, 8)
-	UiTheme.gradient(button, colour, deep)
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BackgroundColor3 = colour
+	fill.BorderSizePixel = 0
+	fill.Parent = button
+	UiTheme.corner(fill, 8)
+	UiTheme.gradient(fill, colour, deep)
+
+	local label = Instance.new("TextLabel")
+	label.Name = "Label"
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = UiTheme.Font.Strong
+	label.TextSize = 14
+	label.TextColor3 = C.OnAccent
+	label.Text = text
+	label.ZIndex = 2
+	label.Parent = button
+
+	-- AutoButtonColor only works on the button's own background, which is now
+	-- transparent, so the hover is done by hand.
+	button.MouseEnter:Connect(function()
+		fill.BackgroundTransparency = 0.18
+	end)
+	button.MouseLeave:Connect(function()
+		fill.BackgroundTransparency = 0
+	end)
 
 	return button
 end
 
-function UiTheme.setButton(button: TextButton, text: string, colour: Color3, deep: Color3, onDark: boolean?)
-	button.Text = text
-	button.BackgroundColor3 = colour
-	button.TextColor3 = if onDark then C.Text else C.OnAccent
+function UiTheme.buttonLabel(button: TextButton): TextLabel?
+	return button:FindFirstChild("Label") :: TextLabel?
+end
 
-	local gradient = button:FindFirstChildOfClass("UIGradient")
-	if gradient then
-		gradient.Color = ColorSequence.new(colour, deep)
+function UiTheme.setButton(button: TextButton, text: string, colour: Color3, deep: Color3, onDark: boolean?)
+	local fill = button:FindFirstChild("Fill") :: Frame?
+	if fill then
+		fill.BackgroundColor3 = colour
+		local gradient = fill:FindFirstChildOfClass("UIGradient")
+		if gradient then
+			gradient.Color = ColorSequence.new(colour, deep)
+		end
+	end
+
+	local label = UiTheme.buttonLabel(button)
+	if label then
+		label.Text = text
+		label.TextColor3 = if onDark then C.Text else C.OnAccent
 	end
 end
 

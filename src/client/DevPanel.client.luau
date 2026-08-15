@@ -50,17 +50,14 @@ local function heading(text: string)
 end
 
 local function button(text: string, action: string, colour: Color3?, deep: Color3?, id: string?): TextButton
-	local element = Theme.button(
-		window,
-		32,
-		text,
-		colour or C.InkRaised,
-		deep or C.Ink
-	)
-	element.TextColor3 = if colour then C.OnAccent else C.Text
-	element.TextSize = 13
+	local element = Theme.button(window, 32, text, colour or C.Neutral, deep or C.NeutralDeep)
 	element.LayoutOrder = nextOrder()
-	Theme.stroke(element, C.Line, 0.55)
+
+	local label = Theme.buttonLabel(element)
+	if label then
+		label.TextSize = 13
+		label.TextColor3 = if colour then C.OnAccent else C.Text
+	end
 
 	element.Activated:Connect(function()
 		devRemote:FireServer({ action = action, id = id })

@@ -178,10 +178,14 @@ local function helpGap()
 	spacer.Parent = helpPanel
 end
 
+-- Derived from the config, so the panel can never disagree with the bindings.
+local NOSE_UP_KEY = if Config.InvertPitch then "S" else "W"
+local NOSE_DOWN_KEY = if Config.InvertPitch then "W" else "S"
+
 helpRow("FLYING", Theme.Font.Display, 15, C.Accent)
 helpRow("Up / Down     Throttle", Theme.Font.Body, 13, C.Text)
-helpRow("W             Nose up", Theme.Font.Body, 13, C.Text)
-helpRow("S             Nose down", Theme.Font.Body, 13, C.Text)
+helpRow(`{NOSE_UP_KEY}             Nose up`, Theme.Font.Body, 13, C.Text)
+helpRow(`{NOSE_DOWN_KEY}             Nose down`, Theme.Font.Body, 13, C.Text)
 helpRow("A / D         Roll", Theme.Font.Body, 13, C.Text)
 helpRow("Q / E         Rudder", Theme.Font.Body, 13, C.Text)
 helpRow("R             Restart run", Theme.Font.Body, 13, C.Text)
@@ -191,7 +195,7 @@ helpRow("CAMERA", Theme.Font.Display, 15, C.Accent)
 helpRow("Right drag    Look around", Theme.Font.Body, 13, C.Text)
 helpRow("Scroll        Zoom", Theme.Font.Body, 13, C.Text)
 helpGap()
-helpRow("Hold W through the vertical and the", Theme.Font.Body, 12, C.Muted)
+helpRow(`Hold {NOSE_UP_KEY} through the vertical and the`, Theme.Font.Body, 12, C.Muted)
 helpRow("aircraft loops. The wings only level", Theme.Font.Body, 12, C.Muted)
 helpRow("themselves while upright, so inverted", Theme.Font.Body, 12, C.Muted)
 helpRow("flight holds.", Theme.Font.Body, 12, C.Muted)
@@ -349,7 +353,7 @@ RunService.Heartbeat:Connect(function(dt)
 	elseif not grounded and agl < 60 then
 		message = "TERRAIN — PULL UP"
 	elseif grounded and speed >= Config.TakeoffSpeed then
-		message, colour, deep = "ROTATE — HOLD W", C.Good, C.GoodDeep
+		message, colour, deep = `ROTATE — HOLD {NOSE_UP_KEY}`, C.Good, C.GoodDeep
 	elseif grounded and speed < Config.TakeoffSpeed then
 		message, colour, deep = "HOLD UP ARROW FOR THROTTLE", C.Good, C.GoodDeep
 	end

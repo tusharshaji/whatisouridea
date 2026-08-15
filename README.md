@@ -55,8 +55,8 @@ You are seated in your own aircraft automatically when you join.
 | Key | Action |
 | --- | --- |
 | `Up` / `Down` | Throttle up / down |
-| `W` | Nose up. Hold it and you loop. |
-| `S` | Nose down |
+| `S` | Pull back -- nose up. Hold it and you loop. |
+| `W` | Push forward -- nose down |
 | `A` / `D` | Roll, with no limit -- hold it and you barrel roll |
 | `Q` / `E` | Rudder, deliberately weak |
 | `R` | Restart the run, back at the runway |
@@ -64,10 +64,11 @@ You are seated in your own aircraft automatically when you join.
 | Right-drag | Look around; recentres itself after a moment |
 | Scroll | Camera distance |
 
-Set `InvertPitch` in `PlaneConfig.luau` to swap `W` and `S`, for a stick that
-works the way a real one does.
+The stick is inverted, the way a real one is: push forward to go down. Set
+`InvertPitch = false` in `PlaneConfig.luau` to swap `W` and `S` back. The help
+panel reads that flag, so the on-screen controls always match the bindings.
 
-Hold the up arrow; once the centre bar reads `ROTATE`, hold `W`. Watch
+Hold the up arrow; once the centre bar reads `ROTATE`, hold `S`. Watch
 `AGL` rather than `ALT` -- `ALT` is height above sea level and says nothing about
 the mountain immediately below you.
 
@@ -190,6 +191,7 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `src/shared/RingConfig.luau` | Every course and scoring value |
 | `src/shared/UpgradeConfig.luau` | Aircraft, upgrades, prices |
 | `src/shared/Ensure.luau` | Get-or-create, instead of waiting forever |
+| `src/replicatedfirst/LoadingScreen.client.luau` | Loading screen and Play gate |
 | `src/client/CameraRig.client.luau` | Chase camera |
 | `src/client/DevPanel.client.luau` | Test panel, `F4` |
 | `src/shared/DevConfig.luau` | Who is allowed to use it |
@@ -239,7 +241,18 @@ UI inside a container.
 **Panels that list things use `AutomaticSize`.** Fixed heights were smaller than
 the content and the last few rows rendered outside the background.
 
-**All UI goes through `UiTheme`.** Every screen used to build its own labels in
+**A `UIGradient` tints its parent's text, not just its background.** Buttons are
+therefore a transparent `TextButton` wrapping a coloured `Fill` frame and a
+separate `Label`. Putting the gradient straight on the button multiplied pale
+labels down until they were unreadable, which is exactly what happened to the
+dev panel.
+
+**The loading screen imports nothing from `ReplicatedStorage`.** It lives in
+`ReplicatedFirst` so it can cover the screen before the game has replicated, and
+a `WaitForChild` on `Shared` there would block for precisely as long as the thing
+it is meant to be hiding. Its few colours are copied from `UiTheme` on purpose.
+
+**All other UI goes through `UiTheme`.** Every screen used to build its own labels in
 `Font.Code`, a monospace face meant for source listings, which combined with
 terminal-style abbreviations made the game look like a debug overlay. The theme
 holds the font stack, the palette and the building blocks -- panels, cards,
