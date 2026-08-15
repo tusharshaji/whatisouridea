@@ -145,7 +145,9 @@ varies per aircraft: the Trainer wants to fly level, the Delta does not care.
 
 ## Two modes
 
-The loading screen offers both, and the hangar switches between them.
+The loading screen offers both, and the aeroplane button on the right of the
+screen -- under the `?` -- switches between them at any time. It is lit only in
+casual, so the quiet state is the normal one.
 
 | | Course | Casual |
 | --- | --- | --- |
@@ -160,7 +162,9 @@ it needs no balancing against course mode -- there is no version of it that is
 and points already banked are untouched by switching.
 
 Switching restarts the run either way, so coming back to the course starts clean
-at gate one.
+at gate one. That is also what stops casual being an escape hatch from a crash
+you are about to have: going casual to survive it costs you the run you were
+trying to save.
 
 The mode is carried on the existing `PlaneInput` remote rather than one of its
 own, deliberately: a new `RemoteEvent` means a new instance in
@@ -358,6 +362,13 @@ gets no loading screen at all and no error they can see -- which looks exactly
 like the feature not being installed. Wait on
 `Players:GetPropertyChangedSignal("LocalPlayer")` first. `RemoveDefaultLoadingScreen()`
 still goes above that, before anything that can yield.
+
+**A panel that reads an attribute must be told when it changes.** The hangar
+refreshes on `Points`, `PlaneId`, `OwnedPlanes` and the upgrade levels, and a
+mode switch card added to it looked completely dead -- the server was doing
+everything it was asked, and the card was simply never redrawn. Anything that
+updates on demand rather than every frame needs its own
+`GetAttributeChangedSignal`.
 
 **All other UI goes through `UiTheme`.** Every screen used to build its own labels in
 `Font.Code`, a monospace face meant for source listings, which combined with

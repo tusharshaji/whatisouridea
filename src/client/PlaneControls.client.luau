@@ -146,6 +146,58 @@ helpButton.Parent = screenGui
 Theme.corner(helpButton, 12)
 Theme.stroke(helpButton, C.Line, 0.3)
 
+--------------------------------------------------------------------------------
+-- Mode, under the help button
+--
+-- On the side of the screen rather than in the hangar, because switching is
+-- something you do when you have had enough of dying, and that is rarely the
+-- moment you are parked at the runway with the shop open.
+--------------------------------------------------------------------------------
+
+local modeButton = Instance.new("TextButton")
+modeButton.Size = UDim2.new(0, 46, 0, 46)
+modeButton.Position = UDim2.new(1, -74, 0, 204)
+modeButton.BackgroundColor3 = C.InkRaised
+modeButton.BorderSizePixel = 0
+modeButton.Font = Theme.Font.Display
+modeButton.TextSize = 22
+modeButton.TextColor3 = C.Text
+modeButton.Text = "\u{2708}"
+modeButton.AutoButtonColor = true
+modeButton.Parent = screenGui
+Theme.corner(modeButton, 12)
+local modeStroke = Theme.stroke(modeButton, C.Line, 0.3)
+
+local modeCaption = Theme.text(screenGui, Theme.Font.Strong, 10, C.Muted, Enum.TextXAlignment.Center)
+modeCaption.Size = UDim2.new(0, 90, 0, 14)
+modeCaption.Position = UDim2.new(1, -96, 0, 252)
+
+-- Lit only in casual, so the default state is as quiet as the help button next
+-- to it and being in the odd mode is the thing that stands out.
+local function refreshMode()
+	if player:GetAttribute("Mode") == "casual" then
+		modeButton.BackgroundColor3 = C.Sky
+		modeButton.TextColor3 = C.OnAccent
+		modeStroke.Color = C.Sky
+		modeCaption.Text = "CASUAL"
+		modeCaption.TextColor3 = C.Sky
+	else
+		modeButton.BackgroundColor3 = C.InkRaised
+		modeButton.TextColor3 = C.Text
+		modeStroke.Color = C.Line
+		modeCaption.Text = "COURSE"
+		modeCaption.TextColor3 = C.Muted
+	end
+end
+
+modeButton.Activated:Connect(function()
+	local casual = player:GetAttribute("Mode") == "casual"
+	inputRemote:FireServer({ mode = if casual then "course" else "casual" })
+end)
+
+player:GetAttributeChangedSignal("Mode"):Connect(refreshMode)
+refreshMode()
+
 local helpPanel = Theme.panel(
 	screenGui,
 	UDim2.new(0, 306, 0, 0),
@@ -199,6 +251,13 @@ helpRow("to a parked one and hold F to get in.", Theme.Font.Body, 12, C.Muted)
 helpRow("Jump to get out. If they crash, so do", Theme.Font.Body, 12, C.Muted)
 helpRow("you. F on your own aircraft puts you", Theme.Font.Body, 12, C.Muted)
 helpRow("back in the cockpit.", Theme.Font.Body, 12, C.Muted)
+helpGap()
+helpRow("MODE", Theme.Font.Display, 15, C.Accent)
+helpRow("The plane button on the right switches", Theme.Font.Body, 12, C.Muted)
+helpRow("between Course and Casual. Casual has", Theme.Font.Body, 12, C.Muted)
+helpRow("no gates, no crashing and endless fuel,", Theme.Font.Body, 12, C.Muted)
+helpRow("and scores nothing. Switching either", Theme.Font.Body, 12, C.Muted)
+helpRow("way starts a fresh run.", Theme.Font.Body, 12, C.Muted)
 helpGap()
 helpRow("CAMERA", Theme.Font.Display, 15, C.Accent)
 helpRow("Right drag    Look around", Theme.Font.Body, 13, C.Text)

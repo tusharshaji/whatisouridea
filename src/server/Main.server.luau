@@ -45,7 +45,14 @@ local SUPERVISE_INTERVAL = 0.25
 -- it.
 local AUTOSAVE_INTERVAL = 120
 
+-- Bump this whenever you change a server file. "Is Studio actually running the
+-- current code?" has been the real answer to enough bug reports here that it is
+-- worth one line of Output to settle it at a glance instead of by symptom.
+local BUILD = "2026-08-15d"
+
 Players.RespawnTime = 3
+
+print(`[Main] server build {BUILD}`)
 
 --------------------------------------------------------------------------------
 -- World setup

@@ -18,9 +18,7 @@ local UpgradeConfig = require(Shared:WaitForChild("UpgradeConfig"))
 local C = Theme.Colour
 
 local player = Players.LocalPlayer
-local remotes = ReplicatedStorage:WaitForChild("Remotes")
-local buyRemote = remotes:WaitForChild("BuyUpgrade") :: RemoteEvent
-local inputRemote = remotes:WaitForChild("PlaneInput") :: RemoteEvent
+local buyRemote = ReplicatedStorage:WaitForChild("Remotes"):WaitForChild("BuyUpgrade") :: RemoteEvent
 
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "ShopUi"
@@ -128,37 +126,6 @@ end
 local planeRows: { [string]: Row } = {}
 local upgradeRows: { [string]: Row } = {}
 
---------------------------------------------------------------------------------
--- Mode
---
--- Here rather than on a key, because the hangar is already the place you come
--- back to the runway for, and switching mode restarts the run anyway.
---------------------------------------------------------------------------------
-
-heading("MODE")
-
-local modeCard = Theme.card(scroller, 74)
-modeCard.Size = UDim2.new(1, -12, 0, 74)
-modeCard.LayoutOrder = nextOrder()
-
-local modeTitle = Theme.text(modeCard, Theme.Font.Display, 16, C.Text)
-modeTitle.Size = UDim2.new(1, -190, 0, 20)
-modeTitle.Position = UDim2.new(0, 16, 0, 10)
-
-local modeBlurb = Theme.text(modeCard, Theme.Font.Body, 12, C.Muted)
-modeBlurb.Size = UDim2.new(1, -190, 0, 32)
-modeBlurb.Position = UDim2.new(0, 16, 0, 32)
-modeBlurb.TextWrapped = true
-
-local modeButton = Theme.button(modeCard, 44, "", C.Sky, C.Accent)
-modeButton.Size = UDim2.new(0, 150, 0, 44)
-modeButton.Position = UDim2.new(1, -166, 0, 15)
-
-modeButton.Activated:Connect(function()
-	local casual = player:GetAttribute("Mode") == "casual"
-	inputRemote:FireServer({ mode = if casual then "course" else "casual" })
-end)
-
 heading("AIRCRAFT")
 for _, plane in UpgradeConfig.Planes do
 	local row = makeRow()
@@ -221,28 +188,6 @@ local function refresh()
 	local owned = ownedPlanes()
 
 	pointsLabel.Text = string.format("%d POINTS", points)
-
-	local casual = player:GetAttribute("Mode") == "casual"
-	if casual then
-		modeTitle.Text = "Casual"
-		modeBlurb.Text = "No gates, no crashing, endless fuel. Nothing is scored."
-		Theme.setButton(modeButton, "FLY THE COURSE", C.Accent, C.AccentDeep)
-	else
-		modeTitle.Text = "Course"
-		modeBlurb.Text = "Gates, fuel and a mountain that will kill you. Points are earned here."
-		Theme.setButton(modeButton, "GO CASUAL", C.Sky, C.Accent)
-	end
-
-	-- Said here rather than anywhere else, because the hangar is the one screen
-	-- where somebody is about to spend an evening's earnings and deserves to
-	-- know the server could not read their save and will not be writing one.
-	if player:GetAttribute("ProgressSaving") == false then
-		footer.Text = "B to close     ⚠ SAVING IS OFF — nothing bought here will be kept"
-		footer.TextColor3 = C.Warn
-	else
-		footer.Text = "B to close"
-		footer.TextColor3 = C.Muted
-	end
 
 	for _, plane in UpgradeConfig.Planes do
 		local row = planeRows[plane.id]
