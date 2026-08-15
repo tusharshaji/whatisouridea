@@ -299,6 +299,16 @@ local function setBoardShown(shown: boolean)
 end
 
 RunService.RenderStepped:Connect(function()
+	-- Casual has no gates and nothing to score, so the whole scoreboard goes.
+	-- Leaving a board reading zero on screen would suggest there was something to
+	-- be earning and that the pilot was failing to earn it.
+	if player:GetAttribute("Mode") == "casual" then
+		setBoardShown(false)
+		marker.Visible = false
+		arrow.Visible = false
+		return
+	end
+
 	-- Airborne, or already scoring: a pilot who lands mid-run keeps the board.
 	setBoardShown(player:GetAttribute("Grounded") == false or number("Score") > 0)
 

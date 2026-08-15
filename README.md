@@ -29,7 +29,13 @@ and hit **Connect** in the Rojo Studio plugin.
 
 > Editing a `.luau` file hot-reloads. Editing `default.project.json` does not --
 > restart `rojo serve` and reconnect the plugin, or the change will never reach
-> Studio.
+> Studio. **This is the single most common way for a change here to appear to do
+> nothing.** The loading screen went missing for three sessions because of it:
+> the code was correct and building correctly, but the `ReplicatedFirst` mapping
+> that carries it was added to the project file and the server was never
+> restarted, so that branch of the tree did not exist in Studio at all. If
+> something new is inexplicably absent, look for it in the Explorer before
+> looking for it in the code.
 
 ## The map
 
@@ -136,6 +142,30 @@ aircraft could never be pointed at the ground. Both were load-bearing for
 gives up past 100 degrees of bank, so it settles you when you are nearly upright
 and never fights you when you are deliberately inverted. How strong that is
 varies per aircraft: the Trainer wants to fly level, the Delta does not care.
+
+## Two modes
+
+The loading screen offers both, and the hangar switches between them.
+
+| | Course | Casual |
+| --- | --- | --- |
+| Gates | Yes | None |
+| Crashing | Kills you and the run | Off |
+| Fuel | Burns, then you glide | Endless |
+| Points | Earned | None |
+
+Casual is for going to look at the island. Nothing is scored in it, which is why
+it needs no balancing against course mode -- there is no version of it that is
+"the efficient way to earn". Aircraft and upgrades already bought carry over,
+and points already banked are untouched by switching.
+
+Switching restarts the run either way, so coming back to the course starts clean
+at gate one.
+
+The mode is carried on the existing `PlaneInput` remote rather than one of its
+own, deliberately: a new `RemoteEvent` means a new instance in
+`default.project.json`, and that only reaches Studio when `rojo serve` is
+restarted.
 
 ## The course
 

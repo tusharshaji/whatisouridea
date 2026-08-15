@@ -19,6 +19,7 @@
 local ContentProvider = game:GetService("ContentProvider")
 local Players = game:GetService("Players")
 local ReplicatedFirst = game:GetService("ReplicatedFirst")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local Workspace = game:GetService("Workspace")
@@ -33,6 +34,8 @@ local MUTED = Color3.fromRGB(146, 155, 172)
 local ACCENT = Color3.fromRGB(255, 138, 46)
 local GOOD = Color3.fromRGB(92, 214, 143)
 local GOOD_DEEP = Color3.fromRGB(38, 152, 92)
+local SKY = Color3.fromRGB(112, 174, 240)
+local SKY_DEEP = Color3.fromRGB(56, 108, 172)
 local ON_ACCENT = Color3.fromRGB(22, 18, 12)
 
 local DISPLAY = Enum.Font.GothamBlack
@@ -48,6 +51,11 @@ local PATIENCE = 45
 -- The default screen goes first and before anything that can yield, or Roblox
 -- shows its own until this script gets around to it.
 ReplicatedFirst:RemoveDefaultLoadingScreen()
+
+-- Deliberately noisy. If this line is missing from Output then the script is not
+-- in the place at all -- which means default.project.json reached Studio without
+-- a `rojo serve` restart, and no amount of fixing the code below will help.
+print("[LoadingScreen] running")
 
 -- LocalPlayer is not guaranteed to exist yet in ReplicatedFirst -- that is the
 -- price of running this early. Indexing it while it is nil throws, the script
@@ -133,46 +141,81 @@ status.TextXAlignment = Enum.TextXAlignment.Left
 status.Text = "Connecting"
 status.Parent = backdrop
 
--- Play. Built as a fill plus a separate label, because a UIGradient tints its
--- parent's text as well as its background.
-local play = Instance.new("TextButton")
-play.Size = UDim2.new(0, 220, 0, 54)
-play.Position = UDim2.new(0.5, -110, 0.5, 100)
-play.BackgroundTransparency = 1
-play.Text = ""
-play.AutoButtonColor = false
-play.Active = false
-play.Parent = backdrop
+-- The two ways in. Each is built as a fill plus a separate label, because a
+-- UIGradient tints its parent's text as well as its background, and a gradient
+-- straight on a TextButton drags pale labels down until they are unreadable.
+type Choice = {
+	button: TextButton,
+	fill: Frame,
+	gradient: UIGradient,
+	stroke: UIStroke,
+	label: TextLabel,
+	caption: TextLabel,
+}
 
-local playFill = Instance.new("Frame")
-playFill.Size = UDim2.fromScale(1, 1)
-playFill.BackgroundColor3 = NEUTRAL
-playFill.BorderSizePixel = 0
-playFill.Parent = play
+local function choice(offsetX: number, waiting: string): Choice
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(0, 210, 0, 54)
+	button.Position = UDim2.new(0.5, offsetX, 0.5, 100)
+	button.BackgroundTransparency = 1
+	button.Text = ""
+	button.AutoButtonColor = false
+	button.Active = false
+	button.Parent = backdrop
 
-local playCorner = Instance.new("UICorner")
-playCorner.CornerRadius = UDim.new(0, 10)
-playCorner.Parent = playFill
+	local fill = Instance.new("Frame")
+	fill.Name = "Fill"
+	fill.Size = UDim2.fromScale(1, 1)
+	fill.BackgroundColor3 = NEUTRAL
+	fill.BorderSizePixel = 0
+	fill.Parent = button
 
-local playGradient = Instance.new("UIGradient")
-playGradient.Color = ColorSequence.new(NEUTRAL, INK_RAISED)
-playGradient.Rotation = 90
-playGradient.Parent = playFill
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, 10)
+	corner.Parent = fill
 
-local playStroke = Instance.new("UIStroke")
-playStroke.Color = LINE
-playStroke.Transparency = 0.4
-playStroke.Parent = playFill
+	local gradient = Instance.new("UIGradient")
+	gradient.Color = ColorSequence.new(NEUTRAL, INK_RAISED)
+	gradient.Rotation = 90
+	gradient.Parent = fill
 
-local playLabel = Instance.new("TextLabel")
-playLabel.Size = UDim2.fromScale(1, 1)
-playLabel.BackgroundTransparency = 1
-playLabel.Font = DISPLAY
-playLabel.TextSize = 18
-playLabel.TextColor3 = MUTED
-playLabel.Text = "LOADING"
-playLabel.ZIndex = 2
-playLabel.Parent = play
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = LINE
+	stroke.Transparency = 0.4
+	stroke.Parent = fill
+
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Font = DISPLAY
+	label.TextSize = 18
+	label.TextColor3 = MUTED
+	label.Text = waiting
+	label.ZIndex = 2
+	label.Parent = button
+
+	local caption = Instance.new("TextLabel")
+	caption.Size = UDim2.new(1, 0, 0, 16)
+	caption.Position = UDim2.new(0, 0, 1, 8)
+	caption.BackgroundTransparency = 1
+	caption.Font = BODY
+	caption.TextSize = 12
+	caption.TextColor3 = MUTED
+	caption.Text = ""
+	caption.Parent = button
+
+	return {
+		button = button,
+		fill = fill,
+		gradient = gradient,
+		stroke = stroke,
+		label = label,
+		caption = caption,
+	}
+end
+
+local play = choice(-218, "LOADING")
+local casual = choice(8, "LOADING")
 
 --------------------------------------------------------------------------------
 -- What "ready" means
@@ -221,22 +264,29 @@ local steps: { Step } = {
 
 --------------------------------------------------------------------------------
 
-local function setPlayReady()
-	playLabel.Text = "PLAY"
-	playLabel.TextColor3 = ON_ACCENT
-	playFill.BackgroundColor3 = GOOD
-	playGradient.Color = ColorSequence.new(GOOD, GOOD_DEEP)
-	playStroke.Color = GOOD
-	playStroke.Transparency = 0.2
-	play.Active = true
-	play.AutoButtonColor = false
+local function arm(item: Choice, text: string, caption: string, colour: Color3, deep: Color3)
+	item.label.Text = text
+	item.label.TextColor3 = ON_ACCENT
+	item.caption.Text = caption
+	item.fill.BackgroundColor3 = colour
+	item.gradient.Color = ColorSequence.new(colour, deep)
+	item.stroke.Color = colour
+	item.stroke.Transparency = 0.2
+	item.button.Active = true
 
-	play.MouseEnter:Connect(function()
-		playFill.BackgroundTransparency = 0.15
+	-- Hover by hand. AutoButtonColor needs an opaque background and this button
+	-- is a transparent shell around the fill that actually carries the colour.
+	item.button.MouseEnter:Connect(function()
+		item.fill.BackgroundTransparency = 0.15
 	end)
-	play.MouseLeave:Connect(function()
-		playFill.BackgroundTransparency = 0
+	item.button.MouseLeave:Connect(function()
+		item.fill.BackgroundTransparency = 0
 	end)
+end
+
+local function setReady()
+	arm(play, "PLAY", "Gates, fuel, and a mountain", GOOD, GOOD_DEEP)
+	arm(casual, "CASUAL", "Just fly. Nothing can kill you", SKY, SKY_DEEP)
 end
 
 local finished = false
@@ -269,8 +319,28 @@ local function dismiss()
 	fade:Play()
 end
 
-play.Activated:Connect(function()
-	if play.Active then
+-- Told to the server only when casual is chosen, and only on the way out. By
+-- then everything has replicated, so this is a FindFirstChild and not the
+-- WaitForChild this file spends so much effort avoiding -- and if the remote
+-- somehow is not there, the player still gets into the game, just in course
+-- mode. They can switch in the hangar.
+local function chooseMode(mode: string)
+	local remotes = ReplicatedStorage:FindFirstChild("Remotes")
+	local input = remotes and remotes:FindFirstChild("PlaneInput")
+	if input and input:IsA("RemoteEvent") then
+		input:FireServer({ mode = mode })
+	end
+end
+
+play.button.Activated:Connect(function()
+	if play.button.Active then
+		dismiss()
+	end
+end)
+
+casual.button.Activated:Connect(function()
+	if casual.button.Active then
+		chooseMode("casual")
 		dismiss()
 	end
 end)
@@ -332,5 +402,5 @@ task.spawn(function()
 	if not string.find(status.Text, "longer") then
 		status.Text = "Ready"
 	end
-	setPlayReady()
+	setReady()
 end)

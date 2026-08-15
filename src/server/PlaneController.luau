@@ -905,7 +905,12 @@ function PlaneController:step(dt: number)
 		1
 	)
 
-	if self.fuel > 0 then
+	if self.unlimitedFuel then
+		-- Casual flying. Held at the top rather than skipped, so the gauge reads
+		-- full instead of freezing at whatever was left when the mode changed.
+		self.fuel = self.fuelCapacity
+		self.engineOut = false
+	elseif self.fuel > 0 then
 		local burn = Config.FuelIdleBurn + Config.FuelBurnRate * self.throttle
 		self.fuel = math.max(0, self.fuel - burn * dt)
 		self.engineOut = self.fuel <= 0

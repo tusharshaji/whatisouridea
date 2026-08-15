@@ -202,6 +202,9 @@ type Pilot = {
 	-- never written back, so a DataStore outage cannot overwrite good data with
 	-- the defaults they are flying on.
 	saveable: boolean,
+	-- "course" or "casual". Casual has no gates, no crashing and no fuel: it is
+	-- the mode for going and looking at the island.
+	mode: string,
 }
 
 local pilots: { [Player]: Pilot } = {}
@@ -258,6 +261,18 @@ local function sendCourse(pilot: Pilot)
 end
 
 local function buildCourse(pilot: Pilot)
+	-- Casual pilots get an empty course rather than a hidden one. The client draws
+	-- what it is sent, so an empty payload is what makes the rings, the marker and
+	-- the gate counter all go away at once.
+	if pilot.mode == "casual" then
+		pilot.gates = {}
+		pilot.activeIndex = 1
+		courseRemote:FireClient(pilot.player, {})
+		pilot.player:SetAttribute("TotalGates", 0)
+		pilot.player:SetAttribute("ActiveGate", 1)
+		return
+	end
+
 	while not survey do
 		task.wait(0.25)
 	end
@@ -386,6 +401,43 @@ local function applyProfile(pilot: Pilot, profile: Save.Profile)
 	end
 end
 
+-- Switch between flying the course and just flying.
+--
+-- Casual turns off the three things that make a run a run: gates to chase,
+-- terrain that kills you, and a tank that empties. It is not a difficulty
+-- setting -- nothing is scored in it at all -- so it needs no balancing against
+-- course mode, and points earned before switching are simply kept.
+local function setMode(pilot: Pilot, mode: string)
+	if mode ~= "casual" and mode ~= "course" then
+		return
+	end
+	if pilot.mode == mode then
+		return
+	end
+
+	pilot.mode = mode
+	local casual = mode == "casual"
+	local controller = pilot.controller
+
+	controller.invincible = casual
+	controller.unlimitedFuel = casual
+	controller:refuel()
+
+	local player = pilot.player
+	player:SetAttribute("Mode", mode)
+	player:SetAttribute("Invincible", casual)
+
+	-- The run does not carry across. Score is per-run and casual has no runs, so
+	-- coming back to the course starts a clean one at gate one.
+	pilot.combo = 0
+	pilot.lap = 0
+	player:SetAttribute("Score", 0)
+	player:SetAttribute("Combo", 0)
+	player:SetAttribute("Multiplier", 1)
+
+	task.spawn(buildCourse, pilot)
+end
+
 local function addPilot(player: Player, profile: Save.Profile)
 	local slot = claimSlot()
 	local controller = PlaneController.new(
@@ -409,6 +461,7 @@ local function addPilot(player: Player, profile: Save.Profile)
 		planeId = profile.planeId,
 		levels = profile.levels,
 		saveable = profile.saveable,
+		mode = "course",
 	}
 	pilots[player] = pilot
 
@@ -418,6 +471,7 @@ local function addPilot(player: Player, profile: Save.Profile)
 	player:SetAttribute("Combo", 0)
 	player:SetAttribute("Multiplier", 1)
 	player:SetAttribute("Crashed", false)
+	player:SetAttribute("Mode", "course")
 	player:SetAttribute("Points", profile.points)
 	player:SetAttribute("Best", profile.best)
 	writeOwned(player, profile.owned)
@@ -584,6 +638,14 @@ end
 inputRemote.OnServerEvent:Connect(function(player, payload)
 	local pilot = pilots[player]
 	if not pilot or type(payload) ~= "table" then
+		return
+	end
+
+	-- Carried on the input remote rather than one of its own, because a new
+	-- RemoteEvent means a new instance in default.project.json, and that reaches
+	-- Studio only when rojo serve is restarted. This needs no restart at all.
+	if type(payload.mode) == "string" then
+		setMode(pilot, payload.mode)
 		return
 	end
 

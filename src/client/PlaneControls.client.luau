@@ -333,21 +333,30 @@ RunService.Heartbeat:Connect(function(dt)
 	local grounded = player:GetAttribute("Grounded") == true
 	local engineOut = player:GetAttribute("EngineOut") == true
 	local crashed = player:GetAttribute("Crashed") == true
+	local casual = player:GetAttribute("Mode") == "casual"
 
 	Theme.setBar(throttleBar, throttle, C.Accent, C.AccentDeep)
 	throttleBar.value.Text = string.format("%d%%", throttle * 100)
 
-	local fuelColour, fuelDeep
-	if fuelFraction <= 0.001 then
-		fuelColour, fuelDeep = C.Bad, C.BadDeep
-	elseif fuelFraction < Config.FuelWarnFraction then
-		fuelColour, fuelDeep = C.Warn, C.WarnDeep
+	if casual then
+		-- Full and blue, and reading as a symbol rather than a number, so it is
+		-- obvious at a glance that the gauge is not being flown to.
+		Theme.setBar(fuelBar, 1, C.Sky, C.Accent)
+		fuelBar.value.Text = "∞"
+		fuelBar.caption.TextColor3 = C.Muted
 	else
-		fuelColour, fuelDeep = C.Good, C.GoodDeep
+		local fuelColour, fuelDeep
+		if fuelFraction <= 0.001 then
+			fuelColour, fuelDeep = C.Bad, C.BadDeep
+		elseif fuelFraction < Config.FuelWarnFraction then
+			fuelColour, fuelDeep = C.Warn, C.WarnDeep
+		else
+			fuelColour, fuelDeep = C.Good, C.GoodDeep
+		end
+		Theme.setBar(fuelBar, fuelFraction, fuelColour, fuelDeep)
+		fuelBar.value.Text = string.format("%d%%", fuelFraction * 100)
+		fuelBar.caption.TextColor3 = if fuelFraction < Config.FuelWarnFraction then fuelColour else C.Muted
 	end
-	Theme.setBar(fuelBar, fuelFraction, fuelColour, fuelDeep)
-	fuelBar.value.Text = string.format("%d%%", fuelFraction * 100)
-	fuelBar.caption.TextColor3 = if fuelFraction < Config.FuelWarnFraction then fuelColour else C.Muted
 
 	speedValue.Text = string.format("%d", speed)
 	altitudeValue.Text = string.format("%d", number("Altitude"))
@@ -376,11 +385,13 @@ RunService.Heartbeat:Connect(function(dt)
 
 	if crashed then
 		message = "CRASHED"
-	elseif engineOut then
+	elseif engineOut and not casual then
 		message = "ENGINE OUT — NO FUEL"
-	elseif fuelFraction < Config.FuelWarnFraction and not grounded then
+	elseif fuelFraction < Config.FuelWarnFraction and not grounded and not casual then
 		message, colour, deep = string.format("LOW FUEL — %d%%", fuelFraction * 100), C.Warn, C.WarnDeep
-	elseif not grounded and agl < 60 then
+	elseif not grounded and agl < 60 and not casual then
+		-- Nothing to pull up from in casual, and a red bar flashing at a pilot
+		-- deliberately flying low through a valley is just noise.
 		message = "TERRAIN — PULL UP"
 	elseif grounded and speed >= Config.TakeoffSpeed then
 		message, colour, deep = `ROTATE — HOLD {NOSE_UP_KEY}`, C.Good, C.GoodDeep
