@@ -61,6 +61,7 @@ You are seated in your own aircraft automatically when you join.
 | `Q` / `E` | Rudder, deliberately weak |
 | `R` | Restart the run, back at the runway |
 | `B` | Hangar (only at the runway) |
+| `F` | Board a parked aircraft -- their back seat, or your own cockpit |
 | Right-drag | Look around; recentres itself after a moment |
 | Scroll | Camera distance |
 
@@ -76,6 +77,45 @@ Fuel burns with throttle. Run dry and the engine quits, but you keep every
 control and the aircraft glides exactly as it does with the throttle shut, only
 slower. Losing height is then yours to solve by pointing the nose somewhere
 sensible.
+
+## Two seats
+
+Every aircraft has a back seat. Walk up to somebody's parked aeroplane and hold
+`F` to get in; jump to get out. A passenger gets the chase camera and no
+instruments, because the instruments are the local player's own attributes and
+would show them their own parked aeroplane's readings. If the pilot crashes, the
+passenger dies with them.
+
+Boarding is a `ProximityPrompt` rather than walking into the seat, since both
+seats sit inside a solid fuselage and there is nothing to touch. It is bound to
+`F` and not the default `E`, which is the rudder, and it only appears while the
+aircraft is stationary. Aiming it at your own aeroplane puts you in the front,
+not the back -- so it doubles as a manual way back into your own cockpit.
+
+The pilot's seat is locked to its owner: anyone else who ends up in it is put
+straight back out. Without that, a `Seat` takes whoever touches it, so on a
+shared runway somebody could wander into your cockpit, leave your aeroplane
+flying on your inputs with a stranger aboard, and lock you out of your own
+aircraft because the seat was full.
+
+## Saved progress
+
+Points, best score, owned aircraft, the aircraft being flown and every upgrade
+level are written to a DataStore. The run -- score, combo, course -- never is.
+
+Writes happen when you leave, when the server shuts down, whenever you buy
+something, and every two minutes as insurance. Reads happen once on join, before
+you are given an aeroplane, which is why the loading screen counts "loading your
+hangar" as a step.
+
+**A failed load is never saved over.** If the store is down or throttled, the
+honest answer is "we do not know what this player owns", and writing a default
+profile on top of that would delete their progress for good. Such a session is
+marked unsaveable, the hangar says so in the footer, and their real data is
+untouched when they come back.
+
+In Studio this needs **Game Settings -> Security -> Enable Studio Access to API
+Services**. Without it the server warns once at startup and nothing persists.
 
 ## The flight model
 
@@ -140,9 +180,6 @@ immediately and tops up your tank. Nothing bought touches the crash rules or the
 gate sizes, so a fully upgraded Delta is faster and sharper but still has to be
 flown through the same rock.
 
-> Purchases last for the session only. There is no DataStore yet, so a server
-> restart resets everyone's bank.
-
 ## How courses are generated
 
 A course is a walk across the map that drops a gate every few hundred studs, and
@@ -180,6 +217,7 @@ Retune the aircraft in `PlaneConfig.luau` and the course retunes itself.
 | `default.project.json` | The world and the aircraft, as real instances |
 | `src/server/Main.server.luau` | Pilots, courses, scoring, purchases |
 | `src/server/PlaneController.luau` | One aircraft, belonging to one pilot |
+| `src/server/Save.luau` | Reading and writing saved progress |
 | `src/server/TerrainSurvey.luau` | The height grid the course is planned on |
 | `src/server/CourseBuilder.luau` | Gate placement |
 | `src/client/PlaneControls.client.luau` | Input and the flight panel |
@@ -206,8 +244,14 @@ course, and wipes progress to test the ramp from zero.
 Every button fires a remote the server re-authorises with `DevConfig` on
 arrival. The `IsDev` attribute only decides whether the panel is drawn -- a
 client can fire that remote whatever it was told, so the flag is presentation
-and the check is the real gate. Add collaborators by user id in
-`DevConfig.UserIds`.
+and the check is the real gate.
+
+Collaborators go in `DevConfig.UserIds` (by user id) or `DevConfig.UserNames`
+(by username, matched case-insensitively). Names are the convenient one and the
+weaker one: a Roblox username can be changed by its owner and then claimed by
+somebody else, who would inherit dev access. The server prints the user id of
+anyone let in by name -- move those ids into `UserIds` and delete the name to
+close that.
 
 ### Things that are easy to break
 
@@ -219,6 +263,23 @@ waits on it hang at startup, forever, with no error. The aircraft stops
 responding, no course is generated, and the place looks like it is loading. Real
 geometry still uses `WaitForChild`, because a missing wing should not be quietly
 replaced with an empty Part.
+
+**`Workspace.FallenPartsDestroyHeight` must sit below the map.** The engine
+deletes any unanchored part below that line and the default is -500, which on
+this island is well above the valley floors and only a little below sea level.
+Diving into low ground therefore deleted the entire aeroplane mid-flight -- no
+crash, no wreck, no respawn, just a pilot standing on the runway wondering where
+their aircraft went. It is now set from `PlaneConfig.VoidHeight`, so the game
+calls you out of the world before the engine gets a chance to.
+
+**Nothing about seating is trusted to happen once.** `PlaneController:supervise()`
+runs four times a second and checks the things that used to be assumed: that the
+airframe still exists, that the pilot's seat holds its owner and nobody else,
+and that a pilot on foot with a free cockpit is put back in it. All the ways a
+player could previously end up permanently aeroplaneless -- a seat taken by
+somebody else, a respawn that outlasted the seating retries, an airframe deleted
+by the engine -- are states this notices, rather than sequences the code had to
+have predicted. Prefer adding a check here over adding another `task.delay`.
 
 **Height is measured against the ground below, not against world Y.** An earlier
 version compared altitude to a fixed number taken off the runway, which was fine
@@ -251,6 +312,13 @@ dev panel.
 `ReplicatedFirst` so it can cover the screen before the game has replicated, and
 a `WaitForChild` on `Shared` there would block for precisely as long as the thing
 it is meant to be hiding. Its few colours are copied from `UiTheme` on purpose.
+
+**`Players.LocalPlayer` can be nil in `ReplicatedFirst`.** That is the price of
+running that early. Indexing it while nil throws, the script dies, and the player
+gets no loading screen at all and no error they can see -- which looks exactly
+like the feature not being installed. Wait on
+`Players:GetPropertyChangedSignal("LocalPlayer")` first. `RemoveDefaultLoadingScreen()`
+still goes above that, before anything that can yield.
 
 **All other UI goes through `UiTheme`.** Every screen used to build its own labels in
 `Font.Code`, a monospace face meant for source listings, which combined with

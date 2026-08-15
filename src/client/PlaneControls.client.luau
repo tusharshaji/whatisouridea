@@ -191,6 +191,13 @@ helpRow("Q / E         Rudder", Theme.Font.Body, 13, C.Text)
 helpRow("R             Restart run", Theme.Font.Body, 13, C.Text)
 helpRow("B             Hangar, at the runway", Theme.Font.Body, 13, C.Text)
 helpGap()
+helpRow("RIDING ALONG", Theme.Font.Display, 15, C.Accent)
+helpRow("Every aircraft has a back seat. Walk up", Theme.Font.Body, 12, C.Muted)
+helpRow("to a parked one and hold F to get in.", Theme.Font.Body, 12, C.Muted)
+helpRow("Jump to get out. If they crash, so do", Theme.Font.Body, 12, C.Muted)
+helpRow("you. F on your own aircraft puts you", Theme.Font.Body, 12, C.Muted)
+helpRow("back in the cockpit.", Theme.Font.Body, 12, C.Muted)
+helpGap()
 helpRow("CAMERA", Theme.Font.Display, 15, C.Accent)
 helpRow("Right drag    Look around", Theme.Font.Body, 13, C.Text)
 helpRow("Scroll        Zoom", Theme.Font.Body, 13, C.Text)
@@ -244,7 +251,10 @@ local function axis(negative: Enum.KeyCode, positive: Enum.KeyCode): number
 	return value
 end
 
--- Your aircraft, and only while you are sitting in it.
+-- Your aircraft, and only while you are sitting in the front of it. A passenger
+-- in somebody else's back seat gets the chase camera and nothing else: the
+-- instruments are all attributes on the local player, so showing them to a
+-- passenger would show them their own parked aeroplane's readings.
 local function flownPlane(): Model?
 	local folder = Workspace:FindFirstChild("Planes")
 	if not folder then
@@ -269,6 +279,14 @@ local function flownPlane(): Model?
 	return plane :: Model
 end
 
+-- True when you are riding in the back of anybody's aircraft.
+local function ridingAlong(): boolean
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	local seat = humanoid and humanoid.SeatPart
+	return seat ~= nil and seat.Name == "PassengerSeat"
+end
+
 UserInputService.InputBegan:Connect(function(input, processed)
 	if processed then
 		return
@@ -290,7 +308,17 @@ RunService.Heartbeat:Connect(function(dt)
 	panel.Visible = plane ~= nil
 	if not plane then
 		-- The help button stays, so the controls can be read on foot.
-		alert.Visible = false
+		if ridingAlong() then
+			alert.Visible = true
+			alertText.Text = "RIDING ALONG — JUMP TO GET OUT"
+			alertText.TextColor3 = Color3.fromRGB(26, 20, 18)
+			alert.BackgroundColor3 = C.Accent
+			alertGradient.Color = ColorSequence.new(C.Accent, C.AccentDeep)
+			alertStroke.Color = C.Accent
+			alert.BackgroundTransparency = 0.02
+		else
+			alert.Visible = false
+		end
 		return
 	end
 

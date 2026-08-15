@@ -40,12 +40,23 @@ local STRONG = Enum.Font.GothamBold
 local BODY = Enum.Font.GothamMedium
 
 -- Never hold someone hostage to a step that is not coming. Past this, the
--- button goes green regardless and the game copes.
-local PATIENCE = 25
+-- button goes green regardless and the game copes. Generous, because the server
+-- reads saved progress out of a DataStore before it builds anyone an aircraft,
+-- and a retrying DataStore can take a good few seconds on its own.
+local PATIENCE = 45
 
-local player = Players.LocalPlayer
-
+-- The default screen goes first and before anything that can yield, or Roblox
+-- shows its own until this script gets around to it.
 ReplicatedFirst:RemoveDefaultLoadingScreen()
+
+-- LocalPlayer is not guaranteed to exist yet in ReplicatedFirst -- that is the
+-- price of running this early. Indexing it while it is nil throws, the script
+-- dies, and the player gets no loading screen at all and no error they can see.
+local player = Players.LocalPlayer
+while not player do
+	Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+	player = Players.LocalPlayer
+end
 
 --------------------------------------------------------------------------------
 -- Screen
@@ -192,7 +203,10 @@ local steps: { Step } = {
 		end,
 	},
 	{
-		label = "Building your aircraft",
+		-- This one covers the DataStore read as well as the build: the server
+		-- will not put an aeroplane on the runway until it knows which one you
+		-- own, so the aircraft appearing is the signal that both are done.
+		label = "Loading your hangar",
 		ready = function()
 			return ownPlane() ~= nil
 		end,

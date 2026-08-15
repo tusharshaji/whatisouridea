@@ -27,6 +27,7 @@ local ensure = require(ReplicatedStorage.Shared.Ensure)
 
 local CourseBuilder = require(script.Parent.CourseBuilder)
 local PlaneController = require(script.Parent.PlaneController)
+local Save = require(script.Parent.Save)
 local TerrainSurvey = require(script.Parent.TerrainSurvey)
 
 local COLLISION_GROUP = "Planes"
@@ -34,6 +35,15 @@ local COLLISION_GROUP = "Planes"
 -- Several gates can fall inside a single frame at speed, so detection runs a
 -- short loop rather than testing one gate and giving up.
 local MAX_GATES_PER_FRAME = 4
+
+-- How often the seating and airframe watchdog runs. Four times a second is
+-- imperceptible to a player and nothing here is expensive.
+local SUPERVISE_INTERVAL = 0.25
+
+-- How often progress is written back, in seconds. Leaving and shutdown both
+-- flush as well; this is only insurance against a crash taking the server with
+-- it.
+local AUTOSAVE_INTERVAL = 120
 
 Players.RespawnTime = 3
 
@@ -44,6 +54,14 @@ Players.RespawnTime = 3
 local planesFolder = Instance.new("Folder")
 planesFolder.Name = "Planes"
 planesFolder.Parent = Workspace
+
+-- The engine deletes any unanchored part below this line, and the default is
+-- -500. This island's valleys bottom out around -851 with water at -644, so the
+-- default quietly deleted whole aeroplanes mid-flight the moment somebody dived
+-- into low ground -- no crash, no wreck, no respawn, just a pilot standing on
+-- the runway wondering where their aircraft went. It has to sit below the point
+-- at which the game itself calls you out of the world.
+Workspace.FallenPartsDestroyHeight = PlaneConfig.VoidHeight - 500
 
 pcall(function()
 	PhysicsService:RegisterCollisionGroup(COLLISION_GROUP)
@@ -171,6 +189,10 @@ type Pilot = {
 	lastReset: number,
 	planeId: string,
 	levels: { [string]: number },
+	-- False when this player's save could not be read. Their progress is then
+	-- never written back, so a DataStore outage cannot overwrite good data with
+	-- the defaults they are flying on.
+	saveable: boolean,
 }
 
 local pilots: { [Player]: Pilot } = {}
@@ -273,7 +295,47 @@ local function restartRun(pilot: Pilot)
 	end
 end
 
-local function addPilot(player: Player)
+local function ownedSet(player: Player): { [string]: boolean }
+	local owned: { [string]: boolean } = {}
+	local raw = player:GetAttribute("OwnedPlanes")
+	for id in string.gmatch(if type(raw) == "string" then raw else "trainer", "[^,]+") do
+		owned[id] = true
+	end
+	return owned
+end
+
+local function writeOwned(player: Player, owned: { [string]: boolean })
+	local list = {}
+	for id in owned do
+		table.insert(list, id)
+	end
+	table.sort(list)
+	player:SetAttribute("OwnedPlanes", table.concat(list, ","))
+end
+
+-- The attributes are the live truth while the player is here; this turns them
+-- back into something the store can hold. Keeping one source rather than two
+-- means the saved profile cannot drift from what the pilot is actually flying.
+local function profileFor(pilot: Pilot): Save.Profile
+	local player = pilot.player
+	return {
+		points = player:GetAttribute("Points") or 0,
+		best = player:GetAttribute("Best") or 0,
+		planeId = pilot.planeId,
+		owned = ownedSet(player),
+		levels = pilot.levels,
+		saveable = pilot.saveable,
+	}
+end
+
+local function savePilot(pilot: Pilot)
+	if not pilot.saveable then
+		return
+	end
+	Save.store(pilot.player, profileFor(pilot))
+end
+
+local function addPilot(player: Player, profile: Save.Profile)
 	local slot = claimSlot()
 	local controller = PlaneController.new(
 		player,
@@ -293,18 +355,24 @@ local function addPilot(player: Player)
 		lastPosition = controller.fuselage and controller.fuselage.Position or Vector3.zero,
 		lap = 0,
 		lastReset = 0,
-		planeId = "trainer",
-		levels = {},
+		planeId = profile.planeId,
+		levels = profile.levels,
+		saveable = profile.saveable,
 	}
 	pilots[player] = pilot
 
+	-- Score and combo are the run, and a run is never restored. Points, best and
+	-- the hangar are the progress, and those come straight out of the save.
 	player:SetAttribute("Score", 0)
-	player:SetAttribute("Best", 0)
-	player:SetAttribute("Points", 0)
 	player:SetAttribute("Combo", 0)
 	player:SetAttribute("Multiplier", 1)
 	player:SetAttribute("Crashed", false)
-	player:SetAttribute("OwnedPlanes", "trainer")
+	player:SetAttribute("Points", profile.points)
+	player:SetAttribute("Best", profile.best)
+	writeOwned(player, profile.owned)
+	-- So the client can say so rather than letting someone bank an hour of
+	-- points that were never going to be written down.
+	player:SetAttribute("ProgressSaving", profile.saveable)
 	-- Only decides whether the panel is drawn. Every action is re-checked on
 	-- arrival, because an attribute is not a permission.
 	player:SetAttribute("IsDev", DevConfig.isDeveloper(player))
@@ -312,7 +380,7 @@ local function addPilot(player: Player)
 	-- Equip rather than just apply stats: this is what gives the aircraft its
 	-- colour and its actual shape, and the controller built a default one in
 	-- its constructor before any of that was known.
-	equipPlane(pilot, "trainer")
+	equipPlane(pilot, profile.planeId)
 
 	controller.onCrash = function()
 		eventRemote:FireClient(player, { kind = "crash" })
@@ -334,9 +402,13 @@ local function removePilot(player: Player)
 		return
 	end
 
-	pilot.controller:destroy()
-	usedSlots[pilot.slot] = nil
 	pilots[player] = nil
+	usedSlots[pilot.slot] = nil
+	pilot.controller:destroy()
+
+	-- After the table entry is gone, so a slow write cannot be raced by the same
+	-- player rejoining this server.
+	savePilot(pilot)
 end
 
 local function onPlayerAdded(player: Player)
@@ -350,8 +422,19 @@ local function onPlayerAdded(player: Player)
 		end
 	end)
 
-	addPilot(player)
 	refreshProbeFilter()
+
+	-- Yields on the DataStore, so nothing above may depend on it having run. The
+	-- player stands on the spawn pad for a moment; the loading screen is still
+	-- up, because it waits for their aircraft to exist.
+	local profile = Save.load(player)
+
+	-- They can leave during a load, especially a retrying one.
+	if player.Parent == nil then
+		return
+	end
+
+	addPilot(player, profile)
 end
 
 Players.PlayerAdded:Connect(onPlayerAdded)
@@ -362,8 +445,64 @@ Players.PlayerRemoving:Connect(function(player)
 end)
 
 for _, player in Players:GetPlayers() do
-	onPlayerAdded(player)
+	task.spawn(onPlayerAdded, player)
 end
+
+--------------------------------------------------------------------------------
+-- Writing progress back
+--------------------------------------------------------------------------------
+
+-- A snapshot, because every save yields on the DataStore and a player can leave
+-- while one is in flight. Walking `pilots` itself across a yield is iteration
+-- over a table that is being mutated underneath you, which in Lua is not a bug
+-- that shows up reliably -- it is a bug that shows up once, in production, with
+-- somebody's progress attached.
+local function currentPilots(): { Pilot }
+	local list: { Pilot } = {}
+	for _, pilot in pilots do
+		table.insert(list, pilot)
+	end
+	return list
+end
+
+task.spawn(function()
+	while true do
+		task.wait(AUTOSAVE_INTERVAL)
+		for _, pilot in currentPilots() do
+			-- They may have left since the snapshot was taken; PlayerRemoving has
+			-- already saved them in that case.
+			if pilots[pilot.player] then
+				savePilot(pilot)
+				-- Spread the writes out rather than firing one per player in a
+				-- single frame, which is the quickest way to hit the budget.
+				task.wait(1)
+			end
+		end
+	end
+end)
+
+-- Roblox gives a closing server a short grace period to finish its writes, and
+-- only if something is actually blocking here.
+game:BindToClose(function()
+	local pending = 0
+
+	for _, pilot in currentPilots() do
+		if pilot.saveable then
+			pending += 1
+			task.spawn(function()
+				savePilot(pilot)
+				pending -= 1
+			end)
+		end
+	end
+
+	-- Nothing to wait for when no one had a saveable session, which is the usual
+	-- case in Studio and keeps stopping a playtest instant.
+	local deadline = os.clock() + 20
+	while pending > 0 and os.clock() < deadline do
+		task.wait(0.1)
+	end
+end)
 
 --------------------------------------------------------------------------------
 -- Input
@@ -393,27 +532,15 @@ inputRemote.OnServerEvent:Connect(function(player, payload)
 		pilot.lastReset = now
 		pilot.controller:reset()
 
-		-- Rebuilding re-seats the pilot, which is itself the trip back to the
-		-- runway. Only move the character by hand if that did not take -- they
-		-- were dead, or on foot somewhere. Writing to HumanoidRootPart while
-		-- seated drags them straight back out of the seat again, which is what
-		-- made R look like it did nothing at all.
-		task.delay(0.5, function()
-			local controller = pilot.controller
-			local character = player.Character
-			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-			if not humanoid or not controller.seat then
-				return
-			end
-			if controller.seat.Occupant == humanoid then
-				return
-			end
-
-			local root = character:FindFirstChild("HumanoidRootPart") :: BasePart?
-			if root and controller.spawnCFrame then
-				root.CFrame = controller.spawnCFrame * CFrame.new(0, 8, 0)
-			end
-		end)
+		-- Nothing else to do. Rebuilding parks a new aeroplane on the runway and
+		-- seats the pilot in it, and Seat:Sit teleports the character into the
+		-- seat, so being put back at the runway falls out of being re-seated.
+		--
+		-- There used to be a follow-up that wrote to HumanoidRootPart if the
+		-- seating looked like it had not taken. It regularly ran while the pilot
+		-- was already seated and dragged them straight back out again, which is
+		-- what made R look like it did nothing. supervise() now covers the case
+		-- it was there for, from outside the seat rather than against it.
 		return
 	end
 
@@ -428,15 +555,6 @@ end)
 --------------------------------------------------------------------------------
 -- Purchases
 --------------------------------------------------------------------------------
-
-local function ownedPlanes(player: Player): { [string]: boolean }
-	local owned: { [string]: boolean } = {}
-	local raw = player:GetAttribute("OwnedPlanes")
-	for id in string.gmatch(if type(raw) == "string" then raw else "trainer", "[^,]+") do
-		owned[id] = true
-	end
-	return owned
-end
 
 buyRemote.OnServerEvent:Connect(function(player, payload)
 	local pilot = pilots[player]
@@ -459,7 +577,7 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 			return
 		end
 
-		local owned = ownedPlanes(player)
+		local owned = ownedSet(player)
 		if not owned[plane.id] then
 			if points < plane.cost then
 				eventRemote:FireClient(player, { kind = "denied", reason = "Not enough points" })
@@ -467,15 +585,14 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 			end
 			player:SetAttribute("Points", points - plane.cost)
 			owned[plane.id] = true
-
-			local list = {}
-			for id in owned do
-				table.insert(list, id)
-			end
-			player:SetAttribute("OwnedPlanes", table.concat(list, ","))
+			writeOwned(player, owned)
 		end
 
 		equipPlane(pilot, plane.id)
+		-- Spending is the one thing worth writing down straight away: it is the
+		-- change a player would be angriest to lose, and it is rare enough that
+		-- saving on every one costs nothing.
+		task.spawn(savePilot, pilot)
 		eventRemote:FireClient(player, { kind = "bought", name = plane.name })
 		return
 	end
@@ -504,6 +621,7 @@ buyRemote.OnServerEvent:Connect(function(player, payload)
 		-- A bigger tank is no use if it arrives empty and you are already at
 		-- the runway, so buying at the pad tops you up.
 		pilot.controller:refuel()
+		task.spawn(savePilot, pilot)
 
 		eventRemote:FireClient(player, {
 			kind = "bought",
@@ -521,11 +639,11 @@ end)
 --------------------------------------------------------------------------------
 
 local function grantAllPlanes(player: Player)
-	local ids = {}
+	local owned: { [string]: boolean } = {}
 	for _, plane in UpgradeConfig.Planes do
-		table.insert(ids, plane.id)
+		owned[plane.id] = true
 	end
-	player:SetAttribute("OwnedPlanes", table.concat(ids, ","))
+	writeOwned(player, owned)
 end
 
 devRemote.OnServerEvent:Connect(function(player, payload)
@@ -592,6 +710,9 @@ devRemote.OnServerEvent:Connect(function(player, payload)
 		return
 	end
 
+	-- Dev actions are saved like any other change, so testing the ramp from zero
+	-- is not undone by a rejoin.
+	task.spawn(savePilot, pilot)
 	eventRemote:FireClient(player, { kind = "dev", action = tostring(action) })
 end)
 
@@ -736,9 +857,23 @@ local function checkGate(pilot: Pilot)
 	pilot.lastPosition = current
 end
 
+local sinceSupervise = 0
+
 RunService.Heartbeat:Connect(function(dt)
 	for _, pilot in pilots do
 		pilot.controller:step(dt)
 		checkGate(pilot)
+	end
+
+	-- The watchdog. Every way a pilot could previously end up permanently on
+	-- foot -- somebody else in their seat, a respawn that outlasted the seating
+	-- retries, an airframe deleted by the engine -- is a state this notices and
+	-- undoes, rather than something the code has to have predicted.
+	sinceSupervise += dt
+	if sinceSupervise >= SUPERVISE_INTERVAL then
+		sinceSupervise = 0
+		for _, pilot in pilots do
+			pilot.controller:supervise()
+		end
 	end
 end)

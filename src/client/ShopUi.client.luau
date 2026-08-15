@@ -189,6 +189,17 @@ local function refresh()
 
 	pointsLabel.Text = string.format("%d POINTS", points)
 
+	-- Said here rather than anywhere else, because the hangar is the one screen
+	-- where somebody is about to spend an evening's earnings and deserves to
+	-- know the server could not read their save and will not be writing one.
+	if player:GetAttribute("ProgressSaving") == false then
+		footer.Text = "B to close     ⚠ SAVING IS OFF — nothing bought here will be kept"
+		footer.TextColor3 = C.Warn
+	else
+		footer.Text = "B to close"
+		footer.TextColor3 = C.Muted
+	end
+
 	for _, plane in UpgradeConfig.Planes do
 		local row = planeRows[plane.id]
 		row.stats.Text = string.format(

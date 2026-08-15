@@ -36,33 +36,28 @@ local probe = RaycastParams.new()
 probe.FilterType = Enum.RaycastFilterType.Exclude
 probe.IgnoreWater = true
 
-local function ownPlane(): Model?
-	local folder = Workspace:FindFirstChild("Planes")
-	if not folder then
-		return nil
-	end
-	return folder:FindFirstChild(`Plane_{player.UserId}`) :: Model?
-end
-
--- The aircraft only if you are actually sitting in it.
+-- Whichever aircraft you are actually sitting in, in either seat.
 --
--- Checking that the plane merely exists is not enough, and was the reason the
--- chase view would not let go: your aeroplane exists the whole time you are
--- alive, so climbing out, dying, or walking around left the camera still bolted
--- to an aircraft you were nowhere near.
+-- Found from the character's own SeatPart rather than by looking up your own
+-- aeroplane by user id, for two reasons. The chase view has to follow the plane
+-- you are riding in as a passenger, which is somebody else's. And checking that
+-- your plane merely exists is not enough -- it exists the whole time you are
+-- alive, which is why the camera used to refuse to let go when you climbed out,
+-- died, or walked around.
 local function flownPlane(): (Model?, BasePart?)
-	local plane = ownPlane()
-	if not plane then
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then
 		return nil, nil
 	end
 
-	local seat = plane:FindFirstChild("PilotSeat")
-	if not seat or not seat:IsA("VehicleSeat") then
+	local seat = humanoid.SeatPart
+	if not seat then
 		return nil, nil
 	end
 
-	local occupant = seat.Occupant
-	if not occupant or occupant.Parent ~= player.Character then
+	local plane = seat.Parent
+	if not plane or not plane:IsA("Model") or plane.Parent ~= Workspace:FindFirstChild("Planes") then
 		return nil, nil
 	end
 

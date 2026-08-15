@@ -25,6 +25,7 @@
 -- wreck can be scattered freely: nothing here has to be recoverable.
 
 local Debris = game:GetService("Debris")
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
@@ -60,6 +61,16 @@ end
 local PlaneController = {}
 PlaneController.__index = PlaneController
 
+-- Who is sitting in a seat, or nil. A Humanoid's Parent is only typed as an
+-- Instance, so the cast is here once rather than at all three call sites.
+local function playerOf(humanoid: Humanoid?): Player?
+	local character = humanoid and humanoid.Parent
+	if not character then
+		return nil
+	end
+	return Players:GetPlayerFromCharacter(character :: Model)
+end
+
 local function approach(current: number, target: number, maxStep: number): number
 	local delta = target - current
 	if math.abs(delta) <= maxStep then
@@ -90,6 +101,8 @@ function PlaneController.new(
 	self.crashImmuneUntil = 0
 	self.teleported = true
 	self.publishClock = 0
+	self.retired = false -- set when the pilot leaves, so the watchdog stops
+	self.passenger = nil :: Player? -- whoever is riding in the back
 	self.onCrash = nil :: (() -> ())?
 	self.onReset = nil :: (() -> ())?
 
@@ -170,9 +183,8 @@ function PlaneController:build()
 		return
 	end
 
-	-- The pilot's seat. Built rather than specified, because every aircraft
-	-- needs exactly one and it always goes in the same place relative to the
-	-- canopy.
+	-- The seats. Built rather than specified, because every aircraft needs the
+	-- same two and they always go in the same place relative to the canopy.
 	local seat = Instance.new("VehicleSeat")
 	seat.Name = "PilotSeat"
 	seat.Size = Vector3.new(2.4, 0.6, 2.4)
@@ -187,6 +199,18 @@ function PlaneController:build()
 	seat.Parent = model
 	built.PilotSeat = seat
 
+	-- The back seat. A plain Seat, not a VehicleSeat: a second VehicleSeat would
+	-- publish its own steering inputs and there is only one aeroplane to steer.
+	local rear = Instance.new("Seat")
+	rear.Name = "PassengerSeat"
+	rear.Size = Vector3.new(2.4, 0.6, 2.4)
+	rear.Transparency = 1
+	rear.Anchored = true
+	rear.CanCollide = false
+	rear.CollisionGroup = self.collisionGroup
+	rear.Parent = model
+	built.PassengerSeat = rear
+
 	local canopy = built.Canopy
 	local seatOffset = if canopy then CFrame.new(0, -0.4, 0) else CFrame.new(0, 1.2, 0)
 
@@ -196,10 +220,13 @@ function PlaneController:build()
 		ordered[index].CFrame = root * partSpec.offset
 	end
 	seat.CFrame = (canopy and canopy.CFrame or fuselage.CFrame) * seatOffset
+	-- Behind the pilot. +Z is aft, since the nose points down -Z.
+	rear.CFrame = seat.CFrame * CFrame.new(0, 0, 3)
 
 	self.model = model
 	self.fuselage = fuselage
 	self.seat = seat
+	self.rearSeat = rear
 	self.hub = built.RotorHub
 
 	--------------------------------------------------------------------------
@@ -389,8 +416,192 @@ function PlaneController:build()
 	self.crashImmuneUntil = os.clock() + Config.CrashGracePeriod
 	self.teleported = true
 
+	self:wireSeats()
 	self:claimOwnership()
 	self:seatPilot()
+end
+
+--------------------------------------------------------------------------------
+-- Seats
+--
+-- Two of them, and neither can be left to look after itself. A Seat takes
+-- whoever touches it, which on a shared runway means somebody else's character
+-- wandering into your cockpit and taking the controls out of your hands -- your
+-- aeroplane then flies on your inputs with a stranger in it, and your own
+-- attempt to get back in is refused because the seat is full. That is the
+-- multiplayer half of "R does nothing".
+--------------------------------------------------------------------------------
+
+function PlaneController:wireSeats()
+	local seat = self.seat
+	local rear = self.rearSeat
+	if not seat or not rear then
+		return
+	end
+
+	-- Boarding is a prompt, not a walk-in. Both seats sit inside the airframe,
+	-- and the fuselage is solid, so there is no way to touch one on foot.
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.Name = "RidePrompt"
+	prompt.ActionText = "Ride along"
+	prompt.ObjectText = `{self.player.DisplayName}'s aircraft`
+	prompt.HoldDuration = 0.4
+	prompt.MaxActivationDistance = 18
+	prompt.RequiresLineOfSight = false
+	-- Not the default E: that is the rudder, so a pilot with an empty back seat
+	-- would have a prompt on screen for their own aeroplane and set it off every
+	-- time they yawed right.
+	prompt.KeyboardKeyCode = Enum.KeyCode.F
+	prompt.GamepadKeyCode = Enum.KeyCode.ButtonY
+	prompt.Parent = rear
+	self.ridePrompt = prompt
+
+	prompt.Triggered:Connect(function(who: Player)
+		local character = who.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+		if not humanoid or humanoid.Health <= 0 or self.crashed then
+			return
+		end
+
+		-- Boarding your own aeroplane means flying it, whichever seat you asked
+		-- for. Sitting behind yourself would just park it.
+		if who == self.player then
+			if seat.Occupant == nil then
+				seat:Sit(humanoid)
+			end
+			return
+		end
+
+		if rear.Occupant == nil then
+			rear:Sit(humanoid)
+		end
+	end)
+
+	-- Anyone who is not the owner is put back out of the pilot's seat.
+	seat:GetPropertyChangedSignal("Occupant"):Connect(function()
+		local occupant = seat.Occupant
+		if not occupant then
+			return
+		end
+		if playerOf(occupant) ~= self.player then
+			occupant.Sit = false
+		end
+	end)
+
+	rear:GetPropertyChangedSignal("Occupant"):Connect(function()
+		local occupant = rear.Occupant
+		if not occupant then
+			self.passenger = nil
+			return
+		end
+
+		local sitting = playerOf(occupant)
+		if sitting == self.player then
+			-- The owner ended up in the back. Move them forward.
+			occupant.Sit = false
+			return
+		end
+
+		self.passenger = sitting
+	end)
+end
+
+-- Keep whoever was riding along across a rebuild. Bounded, because after a crash
+-- they are dead too and have to respawn before there is anything to seat.
+function PlaneController:restorePassenger(who: Player)
+	task.spawn(function()
+		for _ = 1, 30 do
+			local rear = self.rearSeat
+			if self.retired or not rear or not rear.Parent then
+				return
+			end
+			if who.Parent == nil then
+				return -- they left
+			end
+			if rear.Occupant ~= nil then
+				return -- someone got there first
+			end
+
+			local character = who.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			if humanoid and humanoid.Health > 0 and character.PrimaryPart and humanoid.SeatPart == nil then
+				rear:Sit(humanoid)
+				return
+			end
+
+			task.wait(0.25)
+		end
+	end)
+end
+
+-- Called a few times a second by the server loop. Idempotent, and the reason a
+-- pilot can no longer end up permanently on foot: whatever went wrong -- a seat
+-- taken by somebody else, a respawn that outlasted the retry window, an airframe
+-- deleted out from under the controller -- the next tick notices and fixes it.
+function PlaneController:supervise()
+	if self.retired then
+		return
+	end
+
+	-- The airframe can vanish without anything here asking it to: parts below
+	-- Workspace.FallenPartsDestroyHeight are deleted by the engine, and a plane
+	-- flown into a deep valley qualifies. Rebuild rather than sitting dead.
+	local model = self.model
+	local fuselage = self.fuselage
+	if not model or not model.Parent or not fuselage or not fuselage.Parent then
+		-- Rate-limited, so a build that cannot succeed complains once every couple
+		-- of seconds instead of thrashing the server at the watchdog's tick rate.
+		local now = os.clock()
+		if now - (self.lastRebuild or 0) < 2 then
+			return
+		end
+		self.lastRebuild = now
+
+		warn(`[PlaneController] {self.player.Name}'s airframe went missing; rebuilding`)
+		self:reset()
+		return
+	end
+
+	if self.crashed then
+		return
+	end
+
+	-- You can board an aeroplane that is parked, and not one that is taxiing or
+	-- flying. This also keeps the prompt off the pilot's own screen for all but
+	-- the moment they are sat still on the runway.
+	local rear = self.rearSeat
+	if self.ridePrompt and rear then
+		self.ridePrompt.Enabled = rear.Occupant == nil and (self.speed or 0) < 2
+	end
+
+	local seat = self.seat
+	if not seat then
+		return
+	end
+
+	local occupant = seat.Occupant
+	if occupant then
+		-- The Occupant listener normally catches this the instant it happens;
+		-- this is the belt to its braces.
+		if playerOf(occupant) ~= self.player then
+			occupant.Sit = false
+		end
+		return
+	end
+
+	local character = self.player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not humanoid or humanoid.Health <= 0 or not character.PrimaryPart then
+		return
+	end
+
+	-- Riding in somebody else's aeroplane is a choice, not a fault. Only an
+	-- unseated pilot gets put back in their own.
+	if humanoid.SeatPart ~= nil then
+		return
+	end
+
+	seat:Sit(humanoid)
 end
 
 function PlaneController:claimOwnership()
@@ -402,13 +613,13 @@ function PlaneController:claimOwnership()
 	end
 end
 
--- Put the pilot in the cockpit, and keep trying for a moment.
+-- Put the pilot in the cockpit, promptly.
 --
--- One attempt is not enough. After a crash the pilot is dead, and the aeroplane
--- is rebuilt before the character has finished respawning, so the single Sit
--- call landed on a corpse and the pilot spent the rest of the run standing on
--- the runway watching an empty aircraft. Retrying spans the gap without needing
--- the respawn and the rebuild to be timed against each other.
+-- This is the fast path only. It retries for a few seconds because after a crash
+-- the pilot is dead and the aeroplane is rebuilt before the character has
+-- finished respawning, so a single Sit call lands on a corpse. If even that
+-- window is missed -- a slow respawn, a seat briefly held by somebody else --
+-- supervise() picks it up on its next tick, so nothing here has to be exhaustive.
 function PlaneController:seatPilot()
 	self.seatToken = (self.seatToken or 0) + 1
 	local token = self.seatToken
@@ -429,7 +640,9 @@ function PlaneController:seatPilot()
 					self:claimOwnership()
 					return
 				end
-				seat:Sit(humanoid)
+				if seat.Occupant == nil then
+					seat:Sit(humanoid)
+				end
 			end
 
 			task.wait(0.2)
@@ -555,15 +768,19 @@ function PlaneController:crash()
 	fireball.Parent = blast
 	Debris:AddItem(blast, 3)
 
-	-- The pilot dies with the aeroplane. Riding the wreck down unhurt made a
-	-- crash feel like a pause rather than a mistake.
-	local character = self.player.Character
-	if character then
-		local humanoid = character:FindFirstChildOfClass("Humanoid")
+	-- Everybody aboard dies with the aeroplane. Riding the wreck down unhurt made
+	-- a crash feel like a pause rather than a mistake, and a passenger who walks
+	-- away from a fireball undercuts the same thing.
+	local function killAboard(who: Player?)
+		local character = who and who.Character
+		local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 		if humanoid and humanoid.Health > 0 then
 			humanoid.Health = 0
 		end
 	end
+
+	killAboard(self.player)
+	killAboard(self.passenger)
 
 	self.player:SetAttribute("Crashed", true)
 	if self.onCrash then
@@ -572,11 +789,21 @@ function PlaneController:crash()
 end
 
 function PlaneController:reset()
+	-- Whoever was riding along should still be riding along afterwards. Captured
+	-- before the old aeroplane goes, because destroying it empties the seat and
+	-- clears the field.
+	local riding = self.passenger
+
 	if self.model then
 		self.model:Destroy()
 	end
+	self.passenger = nil
 	self.fuel = nil -- a new aeroplane is a full one
 	self:build()
+
+	if riding then
+		self:restorePassenger(riding)
+	end
 
 	self.player:SetAttribute("Crashed", false)
 	if self.onReset then
@@ -585,6 +812,11 @@ function PlaneController:reset()
 end
 
 function PlaneController:destroy()
+	-- Before the model goes, so supervise() cannot decide the missing airframe
+	-- means it should build another one for a pilot who has left.
+	self.retired = true
+	self.passenger = nil
+
 	if self.model then
 		self.model:Destroy()
 		self.model = nil
