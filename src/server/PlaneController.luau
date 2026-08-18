@@ -754,10 +754,15 @@ end
 -- Crashing
 --------------------------------------------------------------------------------
 
-function PlaneController:crash()
+function PlaneController:crash(reason: string?)
 	if self.crashed or not self.model then
 		return
 	end
+
+	-- Named in Output, because "I crashed into nothing" is otherwise impossible
+	-- to tell apart from "I crashed into something I could not see". The raycast
+	-- knows exactly what it hit; there is no reason to make anyone guess.
+	print(`[PlaneController] {self.player.Name} crashed: {reason or "impact"}`)
 
 	self.crashed = true
 	self.crashClearsAt = os.clock() + Config.CrashRespawnDelay
@@ -1107,7 +1112,12 @@ function PlaneController:step(dt: number)
 			)
 
 			if sweep and direction:Dot(sweep.Normal) <= Config.CrashImpactDot then
-				self:crash()
+				local hit = sweep.Instance
+				self:crash(
+					if hit
+						then `hit {hit:GetFullName()} ({hit.ClassName}) at {math.floor(sweep.Position.Y)}`
+						else "hit something with no instance"
+				)
 				return
 			end
 		end
@@ -1119,7 +1129,10 @@ function PlaneController:step(dt: number)
 		if self.invincible then
 			self:reset()
 		else
-			self:crash()
+			-- Not an impact at all. With no terrain under you there is nothing to
+			-- stop a descent, so this reads exactly like flying into something
+			-- invisible -- which is why it says so by name.
+			self:crash(`fell below VoidHeight ({Config.VoidHeight}), nothing was hit`)
 		end
 		return
 	end
